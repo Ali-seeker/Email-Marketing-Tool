@@ -12,6 +12,7 @@ from app.core.db import Base
 
 if TYPE_CHECKING:
     from app.models.lead import Lead
+    from app.models.sequence import SequenceStep
 
 
 class CampaignStatus(StrEnum):
@@ -46,4 +47,10 @@ class Campaign(Base):
         "Lead",
         back_populates="campaign",
         cascade="all, delete-orphan",
+    )
+    sequence_steps: Mapped[list["SequenceStep"]] = relationship(
+        "SequenceStep",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        order_by="SequenceStep.step",
     )

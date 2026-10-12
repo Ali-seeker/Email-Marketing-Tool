@@ -1,9 +1,13 @@
-"""Tests for CLI lead import, validate, and suppress commands."""
+"""Tests for CLI lead import, validate, suppress, and preview commands."""
 
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import select
+
 from app.cli import handle_import, main
+from app.core.db import SessionLocal, init_db
+from app.models import Campaign, Lead, LeadStatus
 
 
 def test_cli_import_file_not_found() -> None:
@@ -46,3 +50,42 @@ def test_cli_suppress_lifecycle() -> None:
         # Remove suppression
         code_remove = main(["suppress", "remove", "cli_user@block.com"])
         assert code_remove == 0
+
+
+def test_cli_preview_command() -> None:
+    """Verify that CLI preview executes cleanly for a lead."""
+    init_db()
+    with SessionLocal() as db:
+        campaign = db.scalar(select(Campaign).where(Campaign.name == "CLI Preview Campaign"))
+        if not campaign:
+            campaign = Campaign(name="CLI Preview Campaign", niche="AI")
+            db.add(campaign)
+            db.commit()
+
+        lead = db.scalar(select(Lead).where(Lead.email == "cli_preview@test.com"))
+        if not lead:
+            lead = Lead(
+                campaign_id=campaign.id,
+                email="cli_preview@test.com",
+                first_name="Paul",
+                company="Test Inc",
+                personal_note="Loved your talk on agentic coding at the recent conference.",
+                status=LeadStatus.VALID.value,
+            )
+            db.add(lead)
+            db.commit()
+        lead_id = lead.id
+
+    with patch("sys.stdout"):
+        code = main(
+            [
+                "preview",
+                "--campaign",
+                "CLI Preview Campaign",
+                "--lead-id",
+                str(lead_id),
+                "--step",
+                "1",
+            ]
+        )
+        assert code == 0

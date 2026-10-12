@@ -92,6 +92,20 @@ def init_db(target_engine: Engine | None = None) -> None:
         except Exception:
             pass
 
+        try:
+            conn.execute(
+                text("ALTER TABLE email_messages ADD COLUMN subject_variant_index INTEGER")
+            )
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE email_messages ADD COLUMN body_variant_index INTEGER"))
+            conn.commit()
+        except Exception:
+            pass
+
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency provider yielding a scoped database session."""

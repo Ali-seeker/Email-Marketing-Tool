@@ -58,6 +58,8 @@ class EmailMessage(Base):
     )
     message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject_variant_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_variant_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
     lead: Mapped["Lead"] = relationship("Lead", back_populates="emails")

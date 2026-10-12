@@ -66,6 +66,19 @@ class Settings(BaseSettings):
         description="Monthly free API verification quota for Hunter.io.",
     )
 
+    # Template Personalization & Sending Identity
+    REQUIRE_PERSONAL_NOTE: bool = Field(
+        default=True,
+        description="If True, leads without a personal_note stay in draft.",
+    )
+    SENDER_NAME: str = "Alex Mercer"
+    SENDER_COMPANY: str = "Agentic Software"
+    SENDER_WEBSITE: str = "https://agenticsoftware.com"
+    SENDER_ADDRESS: str = "100 Pine St, Suite 1250, San Francisco, CA"
+    PORTFOLIO_URL: str = "https://agenticsoftware.com/work"
+    DEFAULT_SERVICE: str = "bespoke AI automation pipelines"
+    DEFAULT_EXAMPLE_RESULT: str = "reclaiming 15+ engineering hours weekly"
+
     # SMTP Configuration (live outreach)
     SMTP_HOST: str = "smtp.example.com"
     SMTP_PORT: int = 587

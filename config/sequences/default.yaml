@@ -1,0 +1,165 @@
+# Default 4-step sequence definition for ColdReach
+# Variables:
+#   {{first_name}}, {{company}}, {{personal_note}}, {{sender_name}},
+#   {{sender_company}}, {{portfolio_url}}, {{service}}, {{niche}}, {{example_result}}
+
+steps:
+  - step: 1
+    delay_days: 0
+    send_as_reply: false
+    subjects:
+      - "{{company}} + quick question"
+      - "idea for {{company}}"
+      - "{{first_name}} - question about automation"
+      - "streamlining operations at {{company}}"
+    bodies:
+      - >
+        Hi {{first_name}},
+
+        {{personal_note}}
+
+        I run an engineering studio called {{sender_company}}, where we build {{service}} for growing teams in the {{niche}} sector. Most teams we meet spend dozens of manual hours every week gluing systems together rather than shipping product.
+
+        Recently, our automated tools helped a peer team achieve {{example_result}} without adding headcount.
+
+        Would you be open to a brief 15-minute call next Tuesday to see if this makes sense for {{company}}?
+
+        Best regards,
+        {{sender_name}}
+
+        P.S. If this is not relevant to you right now, just reply and I will not reach out again.
+      - >
+        Hello {{first_name}},
+
+        {{personal_note}}
+
+        My team at {{sender_company}} specializes in {{service}} designed for tech companies in {{niche}}. We typically help founders eliminate recurring operational bottlenecks across data entry, customer onboarding, and backend synchronization.
+
+        For instance, we recently helped another software team with {{example_result}} using targeted background automation.
+
+        Could we arrange a short 15-minute conversation next week to explore whether there is a fit for {{company}}?
+
+        Best,
+        {{sender_name}}
+
+        P.S. If you would prefer I do not follow up, let me know and I will remove your details.
+      - >
+        Hi {{first_name}},
+
+        {{personal_note}}
+
+        I am reaching out from {{sender_company}}. We engineer {{service}} specifically tailored for operations in {{niche}}. Teams often come to us when repetitive administrative chores slow down their senior developers.
+
+        In our recent project, our workflows delivered {{example_result}} across the board.
+
+        Would you have 15 minutes available next week for a low-key conversation to see if this aligns with your current roadmap at {{company}}?
+
+        Regards,
+        {{sender_name}}
+
+        P.S. If you are all set and would rather not hear from me, let me know and I will gladly hold off.
+
+  - step: 2
+    delay_days: 4
+    send_as_reply: true
+    subjects:
+      - "{{company}} + quick question"
+      - "idea for {{company}}"
+      - "{{first_name}} - question about automation"
+    bodies:
+      - >
+        Hi {{first_name}},
+
+        Following up on my note from last week with a quick observation.
+
+        When working with teams in {{niche}}, we often notice that automating just the handoff between customer inquiries and internal issue tracking produces immediate compounding gains. Even a lightweight event listener can keep engineering focused on core product code.
+
+        If you are exploring {{service}} this quarter, happy to share how we set this up.
+
+        Would a 15-minute chat fit your calendar sometime this Thursday?
+
+        Best,
+        {{sender_name}}
+      - >
+        Hi {{first_name}},
+
+        Thought I would share a small idea regarding {{company}}'s tech stack.
+
+        Many organizations in {{niche}} maintain custom scripts that silently fail without observability. Introducing typed, resilient queue workers typically resolves this and unlocks {{example_result}}.
+
+        Curious if this is something you have run into recently?
+
+        Let me know if you would like to compare notes for 15 minutes.
+
+        Best,
+        {{sender_name}}
+
+  - step: 3
+    delay_days: 8
+    send_as_reply: true
+    subjects:
+      - "{{company}} + quick question"
+      - "idea for {{company}}"
+      - "{{first_name}} - question about automation"
+    bodies:
+      - >
+        Hi {{first_name}},
+
+        Sharing a concrete snapshot from our recent client work.
+
+        A growing platform in {{niche}} had three engineers spending their Mondays handling manual CSV ingestion and account syncing. We deployed {{service}} that handled validation and routing end-to-end, leading to {{example_result}}.
+
+        You can review a few walkthroughs of our architectural approach at {{portfolio_url}}.
+
+        Would you be open to a 15-minute call next week to see how this might apply at {{company}}?
+
+        Best,
+        {{sender_name}}
+      - >
+        Hi {{first_name}},
+
+        Wanted to give you a quick reference point.
+
+        Last month, a technical team similar to {{company}} engaged us for {{service}}. By replacing fragmented cron jobs with a unified pipeline, their team achieved {{example_result}} within three weeks.
+
+        I have summarized the case study and system diagrams at {{portfolio_url}} if you care to skim.
+
+        Would you be interested in a 15-minute conversation on Tuesday?
+
+        Best,
+        {{sender_name}}
+
+  - step: 4
+    delay_days: 14
+    send_as_reply: true
+    subjects:
+      - "{{company}} + quick question"
+      - "idea for {{company}}"
+      - "{{first_name}} - question about automation"
+    bodies:
+      - >
+        Hi {{first_name}},
+
+        I realize you are likely focused on other priorities right now, so I will not crowd your inbox further.
+
+        If {{service}} becomes a priority down the line for {{company}}, our door is always open.
+
+        Wishing you and the team at {{company}} all the best.
+
+        Best regards,
+        {{sender_name}}
+
+        P.S. If you would prefer no further messages in the future, simply let me know.
+      - >
+        Hi {{first_name}},
+
+        Assuming the timing is not right, so this will be my final follow-up.
+
+        Should you ever need assistance with {{service}} or want to discuss strategies around {{example_result}}, you are welcome to reach out whenever convenient.
+
+        Thanks for your time and continued success with {{company}}.
+
+        Warmly,
+        {{sender_name}}
+
+        P.S. Reply with unsubscribe if you want your email excluded from any future outreach.
