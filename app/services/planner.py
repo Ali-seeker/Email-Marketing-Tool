@@ -25,11 +25,12 @@ from app.core.clock import Clock, system_clock
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.logging import get_logger
-from app.models.campaign import Campaign, CampaignStatus
+from app.models.campaign import Campaign
 from app.models.email_message import EmailMessage, EmailMessageStatus
 from app.models.lead import Lead, LeadStatus
 from app.models.sequence import SequenceStep
 from app.models.setting import Setting
+from app.services.sequencer import can_send
 from app.services.suppression import is_suppressed
 
 logger = get_logger(__name__)
@@ -230,33 +231,26 @@ def due_emails(
             if not lead:
                 continue
 
-            # 1. Skip if lead is in a finalized / inactive state
-            terminal_statuses = (
-                LeadStatus.REPLIED.value,
-                LeadStatus.BOUNCED.value,
-                LeadStatus.UNSUBSCRIBED.value,
-                LeadStatus.INVALID.value,
-            )
-            if lead.status in terminal_statuses:
-                msg.status = EmailMessageStatus.SKIPPED.value
-                msg.error = f"Lead in {lead.status} status"
+            # 1. Central safety verification via can_send
+            if not can_send(lead, msg, actual_db):
+                terminal_statuses = (
+                    LeadStatus.REPLIED.value,
+                    LeadStatus.BOUNCED.value,
+                    LeadStatus.UNSUBSCRIBED.value,
+                    LeadStatus.INVALID.value,
+                )
+                if lead.status in terminal_statuses:
+                    msg.status = EmailMessageStatus.SKIPPED.value
+                    msg.error = f"Lead in {lead.status} status"
+                elif is_suppressed(actual_db, lead.email):
+                    msg.status = EmailMessageStatus.SKIPPED.value
+                    msg.error = "Suppressed target"
+                    lead.status = LeadStatus.UNSUBSCRIBED.value
                 continue
 
-            # 2. Re-check global suppression
-            if is_suppressed(actual_db, lead.email):
-                msg.status = EmailMessageStatus.SKIPPED.value
-                msg.error = "Suppressed target"
-                lead.status = LeadStatus.UNSUBSCRIBED.value
-                continue
-
-            # 3. Skip if parent campaign is paused or inactive
             campaign = lead.campaign or actual_db.get(Campaign, lead.campaign_id)
-            if not campaign or campaign.status == CampaignStatus.PAUSED.value:
-                continue
-            if campaign.status != CampaignStatus.ACTIVE.value:
-                continue
 
-            # 4. Check step dispatch timing
+            # 2. Check step dispatch timing
             if msg.step == 1:
                 eligible.append(msg)
             else:
@@ -267,7 +261,10 @@ def due_emails(
                         EmailMessage.step == msg.step - 1,
                     )
                 )
-                if not prev_msg or prev_msg.status != EmailMessageStatus.SENT.value:
+                if not prev_msg or prev_msg.status not in (
+                    EmailMessageStatus.SENT.value,
+                    EmailMessageStatus.SENT_DRY_RUN.value,
+                ):
                     continue
                 if prev_msg.sent_at is None:
                     continue
@@ -276,8 +273,13 @@ def due_emails(
                 if prev_sent.tzinfo is None:
                     prev_sent = prev_sent.replace(tzinfo=UTC)
 
-                delay_days = get_sequence_step_delay(actual_db, campaign.id, msg.step)
-                due_at = prev_sent + timedelta(days=delay_days)
+                if msg.earliest_send_at is not None:
+                    due_at = msg.earliest_send_at
+                    if due_at.tzinfo is None:
+                        due_at = due_at.replace(tzinfo=UTC)
+                else:
+                    delay_days = get_sequence_step_delay(actual_db, campaign.id, msg.step)
+                    due_at = prev_sent + timedelta(days=delay_days)
 
                 if actual_now < due_at:
                     # Not due yet

@@ -35,6 +35,23 @@ from app.services.sender import (
     build_email_message,
     get_sender,
 )
+from app.services.sequencer import (
+    can_send,
+    cancel_lead_sequence,
+    check_completed_leads,
+    enroll,
+    mark_not_interested,
+    mark_replied,
+    mark_won,
+    on_auto_reply,
+    on_email_sent,
+    on_soft_bounce,
+    pause_campaign,
+    pause_lead,
+    resume_campaign,
+    resume_lead,
+    skip_step,
+)
 from app.services.suppression import add as add_suppression
 from app.services.suppression import is_suppressed
 from app.services.templates import (
@@ -91,4 +108,19 @@ __all__ = [
     "process_incoming_mail",
     "calculate_bounce_rates",
     "poll_inbox_and_process",
+    "can_send",
+    "enroll",
+    "on_email_sent",
+    "cancel_lead_sequence",
+    "on_auto_reply",
+    "on_soft_bounce",
+    "check_completed_leads",
+    "pause_lead",
+    "resume_lead",
+    "mark_replied",
+    "mark_won",
+    "mark_not_interested",
+    "skip_step",
+    "pause_campaign",
+    "resume_campaign",
 ]

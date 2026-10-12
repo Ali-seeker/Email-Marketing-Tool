@@ -143,6 +143,18 @@ def init_db(target_engine: Engine | None = None) -> None:
         except Exception:
             pass
 
+        try:
+            conn.execute(text("ALTER TABLE email_messages ADD COLUMN earliest_send_at DATETIME"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE email_messages ADD COLUMN offset_days INTEGER"))
+            conn.commit()
+        except Exception:
+            pass
+
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency provider yielding a scoped database session."""

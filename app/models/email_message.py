@@ -54,6 +54,12 @@ class EmailMessage(Base):
         nullable=True,
         index=True,
     )
+    earliest_send_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime,
+        nullable=True,
+        index=True,
+    )
+    offset_days: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     sent_at: Mapped[datetime | None] = mapped_column(
         UTCDateTime,
         nullable=True,

@@ -52,6 +52,11 @@ from app.services.sender import (
     OutgoingMail,
     get_sender,
 )
+from app.services.sequencer import (
+    can_send,
+    check_completed_leads,
+    on_email_sent,
+)
 from app.services.suppression import is_suppressed
 
 logger = get_logger(__name__)
@@ -264,9 +269,29 @@ class Worker:
             db.commit()
             return True
 
+        # 1. Central gatekeeper verification via can_send
+        if not can_send(lead, msg, db, clock=self.clock):
+            terminal_statuses = (
+                LeadStatus.REPLIED.value,
+                LeadStatus.BOUNCED.value,
+                LeadStatus.UNSUBSCRIBED.value,
+                LeadStatus.INVALID.value,
+                LeadStatus.COMPLETED.value,
+            )
+            if lead.status in terminal_statuses:
+                msg.status = EmailMessageStatus.SKIPPED.value
+                msg.error = f"Lead in terminal status: {lead.status}"
+            elif is_suppressed(db, lead.email):
+                msg.status = EmailMessageStatus.SKIPPED.value
+                msg.error = "Lead is on suppression list"
+                lead.status = LeadStatus.UNSUBSCRIBED.value
+            db.commit()
+            logger.info("can_send rejected message #%d for %s", msg.id, lead.email)
+            return True
+
         campaign = lead.campaign or db.get(Campaign, lead.campaign_id)
 
-        # 1. Killswitch & Campaign Paused Check
+        # 2. Killswitch & Campaign Paused Check
         if is_killswitch_active(db):
             logger.warning("Kill-switch is active. Pausing dispatches.")
             return False
@@ -428,6 +453,9 @@ class Worker:
             )
             db.commit()
             logger.info("Successfully dispatched message #%d to %s", msg.id, lead.email)
+
+            # Advance sequencer lifecycle for next sequence step
+            on_email_sent(msg, db, clock=self.clock)
             return True
 
         # Dispatch Failure Handling
@@ -542,7 +570,10 @@ class Worker:
             if should_poll:
                 self.poll_inbox(db, now)
 
-            # 2. Check global killswitch
+            # 2. Check for sequence completion (Step 4 sent > 7 days ago with no reply)
+            check_completed_leads(db, clock=self.clock)
+
+            # 3. Check global killswitch
             if is_killswitch_active(db):
                 logger.warning("Global kill-switch active. Worker cycle skipped.")
                 return 0

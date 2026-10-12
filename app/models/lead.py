@@ -29,6 +29,8 @@ class LeadStatus(StrEnum):
     BOUNCED = "bounced"
     UNSUBSCRIBED = "unsubscribed"
     COMPLETED = "completed"
+    PAUSED = "paused"
+    WON = "won"
 
 
 class RiskLevel(StrEnum):
