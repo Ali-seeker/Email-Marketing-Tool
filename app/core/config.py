@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "ColdReach"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+    API_TOKEN: SecretStr = Field(
+        default=SecretStr("coldreach-test-secret-token-12345"),
+        description="Secret token required in X-API-Token header for all REST endpoints.",
+    )
 
     # Database
     DATABASE_URL: str = Field(
