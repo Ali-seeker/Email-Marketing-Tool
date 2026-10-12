@@ -9,15 +9,19 @@ Usage:
 
 import argparse
 import sys
+from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.core.db import SessionLocal, init_db
 from app.core.logging import setup_logging
 from app.models.campaign import Campaign
+from app.models.email_message import EmailMessage, EmailMessageStatus
 from app.models.lead import Lead
 from app.services.importer import import_leads
+from app.services.planner import get_mailbox_tz, plan_day
 from app.services.suppression import add as add_suppression
 from app.services.suppression import is_suppressed
 from app.services.suppression import remove as remove_suppression
@@ -115,6 +119,18 @@ def build_parser() -> argparse.ArgumentParser:
     # suppress check
     check_parser = suppress_subparsers.add_parser("check", help="Check if target is suppressed")
     check_parser.add_argument("email", type=str, help="Email address to check")
+
+    # Subcommand: plan
+    plan_parser = subparsers.add_parser(
+        "plan", help="Plan outbound email dispatch schedule for a specific date"
+    )
+    plan_parser.add_argument(
+        "--date",
+        "-d",
+        type=str,
+        default=None,
+        help="Target date for planning (YYYY-MM-DD)",
+    )
 
     return parser
 
@@ -264,6 +280,92 @@ def handle_suppress(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_plan(date_str: str | None) -> int:
+    """Plan outbound emails for a date and print scheduling table."""
+    init_db()
+    with SessionLocal() as db:
+        if date_str:
+            target_date = date.fromisoformat(date_str.strip())
+        else:
+            mailbox_tz = get_mailbox_tz(db)
+            target_date = datetime.now(mailbox_tz).date()
+
+        # Execute daily send planner
+        planned_msgs = plan_day(target_date=target_date, db=db)
+
+        # Retrieve scheduled messages for target date in mailbox timezone
+        mailbox_tz = get_mailbox_tz(db)
+        stmt = (
+            select(EmailMessage)
+            .where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
+            .order_by(EmailMessage.scheduled_at.asc())
+        )
+        all_scheduled = db.scalars(stmt).all()
+        day_msgs = [
+            m
+            for m in all_scheduled
+            if m.scheduled_at is not None
+            and m.scheduled_at.astimezone(mailbox_tz).date() == target_date
+        ]
+
+        display_msgs = day_msgs if day_msgs else planned_msgs
+
+        print("\n" + "=" * 115)
+        print(f"                                COLDREACH SEND PLAN: {target_date.isoformat()}")
+        print("=" * 105)
+        if not display_msgs:
+            print(" No emails scheduled for this date (zero capacity or no due emails).")
+            print("=" * 105 + "\n")
+            return 0
+
+        header = (
+            f"{'Lead':<25} | {'Email':<28} | {'Step':<4} | "
+            f"{'Local Time (Lead TZ)':<23} | {'UTC':<20}"
+        )
+        print(header)
+        print("-" * 105)
+        for msg in display_msgs:
+            lead = msg.lead or db.get(Lead, msg.lead_id)
+            lead_name = (
+                f"{lead.first_name or ''} {lead.last_name or ''}".strip()
+                if lead
+                else f"Lead #{msg.lead_id}"
+            )
+            if not lead_name:
+                lead_name = f"Lead #{msg.lead_id}"
+            email_addr = lead.email if lead else "N/A"
+
+            lead_tz = mailbox_tz
+            if lead and lead.timezone:
+                try:
+                    lead_tz = ZoneInfo(lead.timezone)
+                except Exception:
+                    pass
+
+            if msg.scheduled_at:
+                sched_utc = (
+                    msg.scheduled_at
+                    if msg.scheduled_at.tzinfo
+                    else msg.scheduled_at.replace(tzinfo=UTC)
+                )
+                sched_local = sched_utc.astimezone(lead_tz)
+                local_str = sched_local.strftime("%Y-%m-%d %H:%M %Z")
+                utc_str = sched_utc.strftime("%Y-%m-%d %H:%M UTC")
+            else:
+                local_str = "Not scheduled"
+                utc_str = "N/A"
+
+            row = (
+                f"{lead_name[:25]:<25} | {email_addr[:28]:<28} | {msg.step:<4} | "
+                f"{local_str:<23} | {utc_str:<20}"
+            )
+            print(row)
+
+        print("=" * 105)
+        print(f" Total scheduled: {len(display_msgs)} email(s)\n")
+        return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint."""
     setup_logging()
@@ -278,6 +380,8 @@ def main(argv: list[str] | None = None) -> int:
         return handle_preview(args.campaign, args.lead_id, args.step)
     elif args.command == "suppress":
         return handle_suppress(args)
+    elif args.command == "plan":
+        return handle_plan(args.date)
 
     return 0
 

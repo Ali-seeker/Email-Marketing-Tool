@@ -4,10 +4,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.db import Base
+from app.core.db import Base, UTCDateTime
 
 if TYPE_CHECKING:
     from app.models.lead import Lead
@@ -47,12 +47,12 @@ class EmailMessage(Base):
         index=True,
     )
     scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime,
         nullable=True,
         index=True,
     )
     sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime,
         nullable=True,
         index=True,
     )

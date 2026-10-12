@@ -5,9 +5,11 @@ and declarative base class.
 """
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, types
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -18,6 +20,27 @@ class Base(DeclarativeBase):
     """Base declarative class for all SQLAlchemy ORM models."""
 
     pass
+
+
+class UTCDateTime(types.TypeDecorator):
+    """Timezone-aware UTC DateTime type for robust cross-database serialization."""
+
+    impl = types.DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is not None:
+            if value.tzinfo is None:
+                return value.replace(tzinfo=UTC)
+            return value.astimezone(UTC)
+        return value
+
+    def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is not None:
+            if value.tzinfo is None:
+                return value.replace(tzinfo=UTC)
+            return value.astimezone(UTC)
+        return value
 
 
 def _ensure_sqlite_directory(url: str) -> None:

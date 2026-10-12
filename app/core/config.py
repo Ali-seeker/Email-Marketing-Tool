@@ -52,6 +52,40 @@ class Settings(BaseSettings):
         description="Bounce percentage that triggers an immediate campaign halt.",
     )
 
+    # Outreach Schedule & Planner Settings
+    OUTREACH_START_DATE: str = Field(
+        default="2026-11-01",
+        description="Date operator warm-up completed; no cold outreach sent before this date.",
+    )
+    HARD_MAX_PER_DAY: int = Field(
+        default=30,
+        description="Hard maximum dispatch limit per day that cannot be exceeded by any setting.",
+    )
+    SEND_DAYS: list[str] = Field(
+        default=["Tue", "Wed", "Thu"],
+        description="Allowed outreach days in lead-local timezone.",
+    )
+    SEND_WINDOW_START: str = Field(
+        default="09:00",
+        description="Start time of daily outreach window in lead-local time (HH:MM).",
+    )
+    SEND_WINDOW_END: str = Field(
+        default="11:30",
+        description="End time of daily outreach window in lead-local time (HH:MM).",
+    )
+    MIN_GAP_SECONDS: int = Field(
+        default=120,
+        description="Minimum seconds gap between consecutive sends from the same mailbox.",
+    )
+    MAX_JITTER_SECONDS: int = Field(
+        default=180,
+        description="Maximum random jitter in seconds added to MIN_GAP_SECONDS.",
+    )
+    MAILBOX_TZ: str = Field(
+        default="America/New_York",
+        description="Operator mailbox timezone used for counting the day.",
+    )
+
     # Email Validation Settings
     ALLOW_RISKY: bool = Field(
         default=False,

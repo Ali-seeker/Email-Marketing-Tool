@@ -89,3 +89,11 @@ def test_cli_preview_command() -> None:
             ]
         )
         assert code == 0
+
+
+def test_cli_plan_command() -> None:
+    """Verify CLI plan command executes cleanly and formats output."""
+    init_db()
+    with patch("sys.stdout"):
+        code = main(["plan", "--date", "2026-11-03"])
+        assert code == 0
