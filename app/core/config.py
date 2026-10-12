@@ -52,6 +52,20 @@ class Settings(BaseSettings):
         description="Bounce percentage that triggers an immediate campaign halt.",
     )
 
+    # Email Validation Settings
+    ALLOW_RISKY: bool = Field(
+        default=False,
+        description="Allow risky emails to be marked as valid. If False, they stay invalid.",
+    )
+    HUNTER_API_KEY: SecretStr | None = Field(
+        default=None,
+        description="Optional Hunter.io API key for secondary verification.",
+    )
+    HUNTER_MONTHLY_FREE_QUOTA: int = Field(
+        default=25,
+        description="Monthly free API verification quota for Hunter.io.",
+    )
+
     # SMTP Configuration (live outreach)
     SMTP_HOST: str = "smtp.example.com"
     SMTP_PORT: int = 587

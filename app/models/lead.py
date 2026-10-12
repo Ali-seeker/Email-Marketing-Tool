@@ -31,6 +31,14 @@ class LeadStatus(StrEnum):
     COMPLETED = "completed"
 
 
+class RiskLevel(StrEnum):
+    """Categorical risk assessment for email deliverability."""
+
+    OK = "ok"
+    RISKY = "risky"
+    BAD = "bad"
+
+
 class Lead(Base):
     """Lead target profile imported for cold email campaigns."""
 
@@ -62,6 +70,8 @@ class Lead(Base):
         nullable=False,
         index=True,
     )
+    risk_level: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    validation_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: system_clock.now(),

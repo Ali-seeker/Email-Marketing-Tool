@@ -62,11 +62,35 @@ SessionLocal = sessionmaker(
 
 
 def init_db(target_engine: Engine | None = None) -> None:
-    """Create all database tables using metadata.create_all."""
+    """Create all database tables using metadata.create_all and apply simple migrations."""
+    from sqlalchemy import text
+
     import app.models  # noqa: F401
 
     eng = target_engine or engine
     Base.metadata.create_all(bind=eng)
+
+    # Simple column migrations for existing SQLite databases
+    with eng.connect() as conn:
+        try:
+            conn.execute(
+                text("ALTER TABLE suppressions ADD COLUMN is_domain BOOLEAN DEFAULT 0 NOT NULL")
+            )
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN risk_level VARCHAR(50)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN validation_reason VARCHAR(255)"))
+            conn.commit()
+        except Exception:
+            pass
 
 
 def get_db() -> Generator[Session, None, None]:

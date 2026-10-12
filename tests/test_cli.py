@@ -1,4 +1,4 @@
-"""Tests for CLI lead import command."""
+"""Tests for CLI lead import, validate, and suppress commands."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -25,14 +25,24 @@ def test_cli_import_success(tmp_path: Path) -> None:
         assert code == 0
 
 
-def test_cli_main_dispatch(tmp_path: Path) -> None:
-    """Verify main argument parsing and handler execution."""
-    csv_file = tmp_path / "cli_leads.csv"
-    csv_file.write_text(
-        "email,first_name\ntest@cli.com,Tester\n",
-        encoding="utf-8",
-    )
-
+def test_cli_validate_command() -> None:
+    """Verify that CLI validate executes and exits with 0."""
     with patch("sys.stdout"):
-        code = main(["import", str(csv_file), "--campaign", "CLI Main Campaign"])
+        code = main(["validate", "--campaign", "NonExistentCampaign"])
         assert code == 0
+
+
+def test_cli_suppress_lifecycle() -> None:
+    """Verify CLI suppress add, check, and remove operations."""
+    with patch("sys.stdout"):
+        # Add suppression
+        code_add = main(["suppress", "add", "cli_user@block.com", "--reason", "manual"])
+        assert code_add == 0
+
+        # Check suppression (exits 0 if suppressed)
+        code_check = main(["suppress", "check", "cli_user@block.com"])
+        assert code_check == 0
+
+        # Remove suppression
+        code_remove = main(["suppress", "remove", "cli_user@block.com"])
+        assert code_remove == 0
