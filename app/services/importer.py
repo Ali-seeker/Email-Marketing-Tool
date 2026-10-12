@@ -98,6 +98,32 @@ class ImportReport:
         return data
 
 
+def neutralize_formula(val: str | None) -> str | None:
+    """Neutralize spreadsheet formula injection by prefixing with a single quote."""
+    if not val:
+        return val
+    # If cell starts with formula prefix (=, +, -, @, \t, \r)
+    if val.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return f"'{val}"
+    return val
+
+
+def sanitize_text(
+    text: str | None, max_length: int = 500, allow_multiline: bool = False
+) -> str | None:
+    """Clean text, neutralize formula injection, strip CRLF and limit length."""
+    if not text:
+        return None
+    cleaned = strip_invisible_chars(str(text))
+    if not allow_multiline:
+        cleaned = re.sub(r"[\r\n]+", " ", cleaned)
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+    cleaned = neutralize_formula(cleaned) or ""
+    return cleaned[:max_length] if cleaned else None
+
+
 def strip_invisible_chars(text: str) -> str:
     """Strip zero-width characters, non-breaking spaces, and unicode control junk."""
     if not text:
@@ -128,6 +154,8 @@ def normalize_website(website: str | None) -> str | None:
     if not website:
         return None
     val = strip_invisible_chars(website).strip()
+    # Strip any newlines
+    val = re.sub(r"[\r\n]+", "", val)
     if not val:
         return None
 
@@ -137,20 +165,25 @@ def normalize_website(website: str | None) -> str | None:
     val = val.rstrip("/")
     if not val:
         return None
-    return f"https://{val}"
+    val = neutralize_formula(val) or ""
+    return f"https://{val}"[:250]
 
 
 def normalize_name(name: str | None) -> str | None:
-    """Clean and title-case human names."""
+    """Clean, title-case human names, and neutralize CRLF and formula injection."""
     if not name:
         return None
     cleaned = strip_invisible_chars(name).strip()
+    # Remove all carriage returns and newlines to prevent email header injection
+    cleaned = re.sub(r"[\r\n]+", " ", cleaned).strip()
     if not cleaned:
         return None
     # Capitalize each word segment preserving hyphens and apostrophes
     words = cleaned.split()
     capitalized_words = [w.capitalize() for w in words]
-    return " ".join(capitalized_words)
+    res = " ".join(capitalized_words)
+    res = neutralize_formula(res) or ""
+    return res[:100]
 
 
 def infer_timezone(country: str | None, explicit_tz: str | None) -> str | None:
@@ -170,6 +203,11 @@ def infer_timezone(country: str | None, explicit_tz: str | None) -> str | None:
 def is_valid_email(email: str) -> bool:
     """Validate email format and length constraints."""
     if not email or len(email) > 320:
+        return False
+    # Reject header injection newlines, null bytes, and formula injection prefixes
+    if any(c in email for c in ("\r", "\n", "\0", "\t")):
+        return False
+    if email.startswith(("=", "+", "-", "@")):
         return False
     parts = email.split("@")
     if len(parts) != 2 or len(parts[0]) > 64:
@@ -215,9 +253,9 @@ def _write_rejects_file(
             writer.writerow(
                 {
                     "row_number": item.row_number,
-                    "email": item.email or "",
-                    "reason": item.reason,
-                    "raw_data": str(item.raw_data),
+                    "email": neutralize_formula(item.email or ""),
+                    "reason": neutralize_formula(item.reason),
+                    "raw_data": neutralize_formula(str(item.raw_data)),
                 }
             )
 
@@ -249,11 +287,20 @@ def import_leads(
     # Resolve CSV reader
     close_file = False
     if isinstance(csv_file, (str, Path)) and Path(str(csv_file)).is_file():
-        f = open(str(csv_file), encoding="utf-8-sig")
+        path_obj = Path(str(csv_file))
+        raw_bytes = path_obj.read_bytes()
+        try:
+            content_str = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                content_str = raw_bytes.decode("cp1252")
+            except UnicodeDecodeError:
+                content_str = raw_bytes.decode("latin-1", errors="replace")
+        f = io.StringIO(content_str)
         reader = csv.reader(f)
-        close_file = True
     elif isinstance(csv_file, str):
-        f = io.StringIO(csv_file)
+        cleaned_str = csv_file.lstrip("\ufeff")
+        f = io.StringIO(cleaned_str)
         reader = csv.reader(f)
     else:
         f = csv_file
@@ -314,12 +361,33 @@ def import_leads(
 
         data_rows.append((row_idx, row_dict))
 
-    # Query suppressions for all candidate emails in one round-trip
+    # Query suppressions for all candidate emails and their domains in one round-trip
     suppressed_emails: set[str] = set()
-    if candidate_emails:
-        suppressed_emails = set(
+    suppressed_domains: set[str] = set()
+    candidate_domains = {e.split("@")[1] for e in candidate_emails if "@" in e}
+
+    # Query in chunks of 500 to prevent SQLite 999 parameter limit
+    candidate_emails_list = list(candidate_emails)
+    for i in range(0, len(candidate_emails_list), 500):
+        chunk = candidate_emails_list[i : i + 500]
+        suppressed_emails.update(
             db.scalars(
-                select(Suppression.email).where(Suppression.email.in_(candidate_emails))
+                select(Suppression.email).where(
+                    Suppression.is_domain.is_(False),
+                    Suppression.email.in_(chunk),
+                )
+            ).all()
+        )
+
+    candidate_domains_list = list(candidate_domains)
+    for i in range(0, len(candidate_domains_list), 500):
+        chunk = candidate_domains_list[i : i + 500]
+        suppressed_domains.update(
+            db.scalars(
+                select(Suppression.email).where(
+                    Suppression.is_domain.is_(True),
+                    Suppression.email.in_(chunk),
+                )
             ).all()
         )
 
@@ -363,7 +431,8 @@ def import_leads(
         seen_in_file.add(email)
 
         # Check suppression
-        if email in suppressed_emails:
+        email_domain = email.split("@")[1] if "@" in email else ""
+        if email in suppressed_emails or email_domain in suppressed_domains:
             suppressed_count += 1
             continue
 
@@ -372,14 +441,16 @@ def import_leads(
             duplicates_count += 1
             continue
 
-        # Valid new lead -> normalize remaining fields
+        # Valid new lead -> normalize remaining fields with sanitization
         first_name = normalize_name(row_dict.get("first_name"))
         last_name = normalize_name(row_dict.get("last_name"))
-        company = strip_invisible_chars(row_dict.get("company", "")).strip() or None
+        company = sanitize_text(row_dict.get("company"), max_length=200)
         website = normalize_website(row_dict.get("website"))
-        title = strip_invisible_chars(row_dict.get("title", "")).strip() or None
-        country = strip_invisible_chars(row_dict.get("country", "")).strip() or None
-        personal_note = strip_invisible_chars(row_dict.get("personal_note", "")).strip() or None
+        title = sanitize_text(row_dict.get("title"), max_length=200)
+        country = sanitize_text(row_dict.get("country"), max_length=100)
+        personal_note = sanitize_text(
+            row_dict.get("personal_note"), max_length=1000, allow_multiline=True
+        )
         timezone_val = infer_timezone(country, row_dict.get("timezone"))
 
         lead = Lead(

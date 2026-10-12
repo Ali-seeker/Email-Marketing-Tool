@@ -211,7 +211,9 @@ class Worker:
     def poll_inbox(self, db: Session, now: datetime) -> tuple[int, dict[str, float]]:
         """Poll incoming emails, process bounces/replies, and calculate bounce rates."""
         reader = self.get_inbox_reader()
-        new_count, stats = poll_inbox_and_process(reader=reader, db=db, clock=self.clock)
+        new_count, stats = poll_inbox_and_process(
+            reader=reader, db=db, clock=self.clock, notifier=self.notifier
+        )
         self._last_inbox_poll = now
         # Recalculate health metrics and enforce safety rules after every inbox poll
         evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
@@ -246,7 +248,12 @@ class Worker:
             db.commit()
             return True
 
-        # 1. Central gatekeeper verification via can_send
+        # 1. Global Killswitch Check
+        if is_killswitch_active(db):
+            logger.warning("Kill-switch is active. Refusing dispatch for message #%d.", msg.id)
+            return False
+
+        # 2. Central gatekeeper verification via can_send
         if not can_send(lead, msg, db, clock=self.clock):
             terminal_statuses = (
                 LeadStatus.REPLIED.value,
@@ -268,10 +275,10 @@ class Worker:
 
         campaign = lead.campaign or db.get(Campaign, lead.campaign_id)
 
-        # 2. Killswitch & Campaign Paused Check
-        if is_killswitch_active(db):
-            logger.warning("Kill-switch is active. Pausing dispatches.")
-            return False
+        # 3. Campaign Paused Check
+        if campaign and campaign.status != CampaignStatus.ACTIVE.value:
+            logger.info("Campaign %s is not active; holding message #%d", campaign.name, msg.id)
+            return True
 
         if not campaign or campaign.status == CampaignStatus.PAUSED.value:
             c_name = campaign.name if campaign else "N/A"

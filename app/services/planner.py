@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.clock import Clock, system_clock
+from app.core.clock import Clock, FakeClock, system_clock
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.logging import get_logger
@@ -231,6 +231,7 @@ def due_emails(
         )
         approved_emails = actual_db.scalars(stmt).all()
 
+        eval_clock = FakeClock(actual_now)
         eligible: list[EmailMessage] = []
         for msg in approved_emails:
             lead = msg.lead or actual_db.get(Lead, msg.lead_id)
@@ -238,7 +239,7 @@ def due_emails(
                 continue
 
             # 1. Central safety verification via can_send
-            if not can_send(lead, msg, actual_db):
+            if not can_send(lead, msg, actual_db, clock=eval_clock):
                 terminal_statuses = (
                     LeadStatus.REPLIED.value,
                     LeadStatus.BOUNCED.value,

@@ -230,7 +230,7 @@ class CompositeNotifier(Notifier):
 def _normalize_alert_key(title: str) -> str:
     """Create a sanitized deterministic key for rate-limiting identical alerts."""
     clean = title.strip().lower()
-    return hashlib.md5(clean.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(clean.encode("utf-8")).hexdigest()[:16]
 
 
 def is_alert_rate_limited(db: Session, title: str, clock: Clock) -> bool:

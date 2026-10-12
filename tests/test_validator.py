@@ -205,3 +205,54 @@ def test_twelve_sample_emails_classification(val_db: Session, fake_clock: FakeCl
         risk, reason = evaluate_email(email, website, val_db, dns, verifier, fake_clock)
         assert risk == expected_risk, f"Failed for {email}: got {risk}, expected {expected_risk}"
         assert reason is not None
+
+
+def test_extract_domain_from_url_edge_cases() -> None:
+    """Verify URL parsing handles edge cases."""
+    from app.services.validator import extract_domain_from_url
+
+    assert extract_domain_from_url(None) is None
+    assert extract_domain_from_url("") is None
+    assert extract_domain_from_url("acme.com") == "acme.com"
+    assert extract_domain_from_url("http://www.acme.com:8080/path") == "acme.com"
+    assert extract_domain_from_url("https://sub.domain.co.uk/") == "sub.domain.co.uk"
+
+
+def test_effective_allow_risky_and_campaign_id_filter(val_db: Session) -> None:
+    """Verify get_effective_allow_risky reads DB setting and validate_leads filters by campaign_id."""
+    from app.models import Setting
+    from app.services.validator import get_effective_allow_risky
+
+    # Test default from settings
+    assert get_effective_allow_risky(val_db) is False
+
+    # Test setting in DB
+    val_db.add(Setting(key="ALLOW_RISKY", value="true"))
+    val_db.commit()
+    assert get_effective_allow_risky(val_db) is True
+
+    # Test validate_leads by campaign_id
+    camp = Campaign(name="Filtered Camp")
+    val_db.add(camp)
+    val_db.commit()
+
+    lead1 = Lead(campaign_id=camp.id, email="ok_user@acme.com", status=LeadStatus.NEW.value)
+    lead2 = Lead(campaign_id=camp.id, email="invalid-format", status=LeadStatus.NEW.value)
+    val_db.add_all([lead1, lead2])
+    val_db.commit()
+
+    dns = FakeDnsResolver()
+    verifier = FakeEmailVerifier()
+    clock = FakeClock()
+
+    summary = validate_leads(
+        val_db,
+        campaign_id=camp.id,
+        dns_resolver=dns,
+        verifier=verifier,
+        clock=clock,
+    )
+    assert summary.total_checked == 2
+    assert summary.valid_count == 1
+    assert summary.invalid_count == 1
+

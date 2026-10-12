@@ -76,6 +76,7 @@ def _create_lead_with_email(
         company="Acme Corp",
         timezone=timezone,
         status=status,
+        personal_note="Great work on recent product launch",
     )
     db.add(lead)
     db.flush()
@@ -460,3 +461,82 @@ def test_missing_lead_timezone_fallback_and_warning(
     assert msg.scheduled_at is not None
     local_dt = msg.scheduled_at.astimezone(ZoneInfo("America/New_York"))
     assert time(9, 0) <= local_dt.time() <= time(11, 30)
+
+
+def test_planner_config_helpers_edge_cases(plan_db: Session) -> None:
+    """Verify planner config helpers with various inputs."""
+    from app.models import Setting
+    from app.services.planner import (
+        due_emails,
+        get_allowed_weekdays,
+        get_mailbox_tz,
+        get_outreach_start_date,
+        get_send_window,
+    )
+
+    # Date helper edge cases
+    plan_db.merge(Setting(key="OUTREACH_START_DATE", value="not-a-valid-date"))
+    plan_db.commit()
+    assert get_outreach_start_date(plan_db) == date(2026, 11, 1)
+
+    # Timezone helper edge case
+    plan_db.merge(Setting(key="MAILBOX_TZ", value="Invalid/Zone_Name"))
+    plan_db.commit()
+    assert get_mailbox_tz(plan_db) == ZoneInfo("America/New_York")
+
+    # Allowed weekdays string parsing
+    plan_db.merge(Setting(key="SEND_DAYS", value='["mon", "wed"]'))
+    plan_db.commit()
+    assert get_allowed_weekdays(plan_db) == [0, 2]
+
+    plan_db.merge(Setting(key="SEND_DAYS", value="1, 3, 5"))
+    plan_db.commit()
+    assert get_allowed_weekdays(plan_db) == [1, 3, 5]
+
+    # Send window edge case
+    plan_db.merge(Setting(key="SEND_WINDOW_START", value="invalid:time:format"))
+    plan_db.commit()
+    start_t, _ = get_send_window(plan_db)
+    assert start_t == time(9, 0)
+
+    # due_emails with killswitch active returns empty
+    from app.services.safety import trigger_killswitch
+    trigger_killswitch(plan_db, "testing killswitch", clock=FakeClock())
+    assert due_emails(now_or_db=plan_db) == []
+
+
+def test_planner_daily_capacity_and_earliest_send_at(plan_db: Session) -> None:
+    """Verify daily_capacity handles string dates and halved capacity from resume."""
+    from app.models import Setting
+    from app.services.planner import daily_capacity, due_emails
+    from app.services.safety import resume_killswitch
+
+    # 1. String target_date and invalid setting
+    plan_db.merge(Setting(key="HARD_MAX_PER_DAY", value="invalid_int"))
+    plan_db.commit()
+    cap = daily_capacity("2026-11-05", plan_db)
+    assert cap > 0
+
+    # 2. Resume halves capacity
+    resume_killswitch("I ACKNOWLEDGE AND RESUME", "Verified issue fixed", plan_db)
+    halved_cap = daily_capacity(date(2026, 11, 5), plan_db)
+    assert halved_cap <= cap
+
+    # 3. due_emails with earliest_send_at check
+    campaign = plan_db.scalar(select(Campaign))
+    assert campaign is not None
+    lead, msg = _create_lead_with_email(plan_db, campaign.id, "earliest_test@acme.com")
+    msg.earliest_send_at = datetime(2026, 11, 3, 15, 0, tzinfo=UTC)
+    plan_db.commit()
+
+    # Before earliest_send_at
+    early_dt = datetime(2026, 11, 3, 14, 0, tzinfo=UTC)
+    dues = due_emails(now_or_db=early_dt, db_or_now=plan_db)
+    assert msg.id not in [m.id for m in dues]
+
+    # After earliest_send_at
+    late_dt = datetime(2026, 11, 3, 16, 0, tzinfo=UTC)
+    dues = due_emails(now_or_db=late_dt, db_or_now=plan_db)
+    assert msg.id in [m.id for m in dues]
+
+

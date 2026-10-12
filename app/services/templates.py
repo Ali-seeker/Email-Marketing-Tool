@@ -6,6 +6,7 @@ assembly, and spam linter verification.
 """
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,10 +26,11 @@ from app.services.linter import LintResult, lint_email
 
 logger = get_logger(__name__)
 
-# Jinja2 environment configured with StrictUndefined to reject missing variables
+# Jinja2 environment configured with StrictUndefined to reject missing variables.
+# Emails are strictly RFC 5322 plain-text, zero HTML rendering.
 jinja_env = jinja2.Environment(
     undefined=jinja2.StrictUndefined,
-    autoescape=False,
+    autoescape=False,  # nosec B701
     trim_blocks=True,
     lstrip_blocks=True,
 )
@@ -79,7 +81,7 @@ def get_deterministic_variant_index(lead_id: int, step: int, kind: str, total_va
     if total_variants <= 1:
         return 0
     token = f"lead:{lead_id}:step:{step}:{kind}"
-    digest = hashlib.md5(token.encode("utf-8")).hexdigest()
+    digest = hashlib.md5(token.encode("utf-8"), usedforsecurity=False).hexdigest()
     return int(digest, 16) % total_variants
 
 
@@ -279,10 +281,11 @@ def render_step_email(
                 rendered_subject = f"Re: {cleaned_sub}"
         else:
             raw_sub = step_def.subjects[sub_idx]
-            rendered_subject = render_template_string(raw_sub, ctx)
     else:
         raw_sub = step_def.subjects[sub_idx]
         rendered_subject = render_template_string(raw_sub, ctx)
+
+    rendered_subject = re.sub(r"[\r\n]+", " ", rendered_subject).strip()
 
     # 2. Body rendering
     raw_body = step_def.bodies[body_idx]

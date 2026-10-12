@@ -98,7 +98,7 @@ def can_send(
     if lead is None or email is None:
         return False
 
-    # 1. Terminal / stopped lead statuses
+    # 1. Lead lifecycle status check (must be approved or in_progress, never stopped or unapproved)
     stopped_statuses = (
         LeadStatus.REPLIED.value,
         LeadStatus.BOUNCED.value,
@@ -106,8 +106,13 @@ def can_send(
         LeadStatus.COMPLETED.value,
         LeadStatus.INVALID.value,
         LeadStatus.PAUSED.value,
+        LeadStatus.NEW.value,
     )
     if lead.status in stopped_statuses:
+        return False
+
+    # 1b. Step 1 requires an approved personal note
+    if email.step == 1 and (not lead.personal_note or not lead.personal_note.strip()):
         return False
 
     # 2. Global suppression check
@@ -161,6 +166,29 @@ def can_send(
         if earliest.tzinfo is None:
             earliest = earliest.replace(tzinfo=UTC)
         if now < earliest:
+            return False
+
+    # 8. Local window and allowed weekday constraint for outbound dispatches
+    if email.status in (EmailMessageStatus.SCHEDULED.value, EmailMessageStatus.SENDING.value):
+        from zoneinfo import ZoneInfo
+        from app.services.planner import (
+            get_allowed_weekdays,
+            get_mailbox_tz,
+            get_send_window,
+        )
+
+        clk = clock or system_clock
+        now = clk.now()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        mailbox_tz = get_mailbox_tz(db)
+        lead_tz = ZoneInfo(lead.timezone) if lead.timezone else mailbox_tz
+        local_time = now.astimezone(lead_tz)
+        allowed_weekdays = get_allowed_weekdays(db)
+        if local_time.weekday() not in allowed_weekdays:
+            return False
+        w_start, w_end = get_send_window(db)
+        if not (w_start <= local_time.time() <= w_end):
             return False
 
     return True

@@ -46,6 +46,9 @@ def worker_db() -> tuple[Session, sessionmaker]:
         session.add(Setting(key="MAILBOX_TZ", value="America/New_York"))
         session.add(Setting(key="HARD_MAX_PER_DAY", value="30"))
         session.add(Setting(key="MIN_GAP_SECONDS", value="120"))
+        session.add(Setting(key="SEND_WINDOW_START", value="00:00"))
+        session.add(Setting(key="SEND_WINDOW_END", value="23:59"))
+        session.add(Setting(key="SEND_DAYS", value='["Mon", "Tue", "Wed", "Thu", "Fri"]'))
         session.commit()
         yield session, session_factory
 
@@ -79,6 +82,7 @@ def _seed_lead_and_scheduled_msg(
         company="Acme",
         timezone="America/New_York",
         status=status,
+        personal_note="Great work scaling the infra",
     )
     db.add(lead)
     db.flush()

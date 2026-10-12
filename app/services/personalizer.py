@@ -424,3 +424,40 @@ def personalize_campaign(
             stats["needs_manual_note"] += 1
 
     return stats
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class PersonalizeReport:
+    """Report summarizing bulk personalization outcome."""
+
+    total: int
+    personalized_count: int
+    preserved_count: int
+    needs_manual_count: int
+
+
+def personalize_leads(
+    db: Session,
+    campaign_id: int | str,
+    fetcher: WebFetcher,
+    llm_client: LlmClient,
+    clock: Clock | None = None,
+) -> PersonalizeReport:
+    """Convenience helper to personalize eligible leads for a campaign and return a report object."""
+    stats = personalize_campaign(
+        campaign_name_or_id=campaign_id,
+        db=db,
+        fetcher=fetcher,
+        llm=llm_client,
+        clock=clock,
+    )
+    return PersonalizeReport(
+        total=stats["total"],
+        personalized_count=stats["personalized"] + stats["preserved"],
+        preserved_count=stats["preserved"],
+        needs_manual_count=stats["needs_manual_note"],
+    )
+

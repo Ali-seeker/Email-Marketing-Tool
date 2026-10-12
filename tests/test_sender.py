@@ -208,3 +208,82 @@ def test_smtp_sender_integration_with_local_aiosmtpd() -> None:
 
     finally:
         controller.stop()
+
+
+def test_smtp_sender_error_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test SmtpSender translates all SMTP exception classes to accurate SendResult types."""
+    import smtplib
+
+    sender = SmtpSender(host="smtp.test.com", port=587, use_ssl=False)
+    mail = OutgoingMail(
+        to_email="err@test.com",
+        from_email="snd@test.com",
+        from_name="Snd",
+        subject="Sub",
+        body="Body",
+    )
+
+    # 1. Auth failure
+    def mock_auth(*args, **kwargs):
+        raise smtplib.SMTPAuthenticationError(535, b"Invalid credentials")
+
+    monkeypatch.setattr(smtplib, "SMTP", mock_auth)
+    res_auth = sender.send(mail)
+    assert res_auth.success is False
+    assert res_auth.error_type == "auth"
+
+    # 2. Transient 4xx error
+    def mock_transient(*args, **kwargs):
+        raise smtplib.SMTPResponseException(421, b"Service unavailable, closing transmission")
+
+    monkeypatch.setattr(smtplib, "SMTP", mock_transient)
+    res_transient = sender.send(mail)
+    assert res_transient.success is False
+    assert res_transient.error_type == "transient"
+
+    # 3. Permanent 5xx error
+    def mock_permanent(*args, **kwargs):
+        raise smtplib.SMTPResponseException(550, b"User unknown")
+
+    monkeypatch.setattr(smtplib, "SMTP", mock_permanent)
+    res_perm = sender.send(mail)
+    assert res_perm.success is False
+    assert res_perm.error_type == "permanent"
+
+    # 4. Killswitch keyword in SMTP response
+    def mock_killswitch(*args, **kwargs):
+        raise smtplib.SMTPResponseException(554, b"Account suspended for policy violations")
+
+    monkeypatch.setattr(smtplib, "SMTP", mock_killswitch)
+    res_kill = sender.send(mail)
+    assert res_kill.success is False
+    assert res_kill.error_type == "killswitch"
+
+    # 5. SMTPServerDisconnected / Timeout
+    def mock_disconnect(*args, **kwargs):
+        raise smtplib.SMTPServerDisconnected("Connection lost unexpectedly")
+
+    monkeypatch.setattr(smtplib, "SMTP", mock_disconnect)
+    res_disc = sender.send(mail)
+    assert res_disc.success is False
+    assert res_disc.error_type == "transient"
+
+    # 6. Generic exception
+    def mock_generic(*args, **kwargs):
+        raise RuntimeError("Unexpected socket driver fault")
+
+    monkeypatch.setattr(smtplib, "SMTP", mock_generic)
+    res_gen = sender.send(mail)
+    assert res_gen.success is False
+    assert res_gen.error_type == "permanent"
+
+
+def test_get_sender_factory_resolves_mode():
+    """Verify get_sender factory correctly instantiates DryRunSender vs SmtpSender."""
+    from app.services.sender import get_sender
+
+    dry = get_sender(override_live_mode=False)
+    assert isinstance(dry, DryRunSender)
+
+    live = get_sender(override_live_mode=True)
+    assert isinstance(live, SmtpSender)

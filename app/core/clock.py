@@ -45,13 +45,17 @@ class FakeClock(Clock):
         """Return the simulated current UTC datetime."""
         return self._current_time
 
-    def advance(self, duration: timedelta) -> None:
-        """Advance simulated clock by a specific timedelta.
+    def advance(self, duration: timedelta | None = None, **kwargs) -> None:
+        """Advance simulated clock by a specific timedelta or kwargs (e.g. seconds=300).
 
         Args:
             duration: The timedelta to add to current simulated time.
+            **kwargs: Arguments passed directly to timedelta (e.g., minutes=5, seconds=120).
         """
-        self._current_time += duration
+        if duration is not None:
+            self._current_time += duration
+        elif kwargs:
+            self._current_time += timedelta(**kwargs)
 
     def set_time(self, new_time: datetime) -> None:
         """Set simulated clock to a specific datetime.

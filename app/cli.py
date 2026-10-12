@@ -156,6 +156,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional campaign name to filter review queue",
     )
 
+    # Subcommand: seed-demo
+    seed_parser = subparsers.add_parser(
+        "seed-demo", help="Seed database with rich demo data for UI testing"
+    )
+    seed_parser.add_argument(
+        "--critical",
+        action="store_true",
+        default=False,
+        help="Trigger emergency kill-switch in demo dataset",
+    )
+
+    # Subcommand: doctor
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Inspect configuration, safety constraints, database, and system readiness"
+    )
+    doctor_parser.add_argument(
+        "--live-check",
+        action="store_true",
+        default=False,
+        help="Run real SMTP/IMAP login credentials test (only if LIVE_MODE=true)",
+    )
+
+    # Subcommand: backup
+    subparsers.add_parser(
+        "backup", help="Create online SQLite hot backup into data/backups"
+    )
+
+    # Subcommand: send-test
+    send_test_parser = subparsers.add_parser(
+        "send-test", help="Send a single diagnostic test email (LIVE_MODE=true only)"
+    )
+    send_test_parser.add_argument(
+        "--to",
+        type=str,
+        required=True,
+        help="Recipient email address for diagnostic test dispatch",
+    )
+
     return parser
 
 
@@ -499,6 +537,122 @@ def handle_review(campaign_name: str | None = None) -> int:
         return 0
 
 
+def handle_seed_demo(critical: bool = False) -> int:
+    """Populate database with rich demo dataset for dashboard testing."""
+    from app.services.demo_seeder import seed_demo_database
+
+    init_db()
+    with SessionLocal() as db:
+        stats = seed_demo_database(db=db, critical=critical)
+    print("\n" + "=" * 55)
+    print("           COLDREACH DEMO SEED COMPLETED")
+    print("=" * 55)
+    print(f" Campaigns created : {stats['campaigns']}")
+    print(f" Leads generated   : {stats['leads']}")
+    print(f" Emails dispatched : {stats['emails']}")
+    print(f" Inbound replies   : {stats['replies']}")
+    print(f" Killswitch status : {'CRITICAL (ENGAGED)' if critical else 'WARNING/HEALTHY (OFF)'}")
+    print("=" * 55 + "\n")
+    return 0
+
+
+def handle_doctor(live_check: bool = False) -> int:
+    """Run comprehensive system diagnostics checklist."""
+    from app.services.doctor import run_doctor_checks
+
+    init_db()
+    with SessionLocal() as db:
+        report = run_doctor_checks(db=db, live_check=live_check)
+
+    print("\n" + "=" * 65)
+    print("                COLDREACH SYSTEM DOCTOR")
+    print("=" * 65)
+    for item in report.items:
+        prefix = f"[{item.status}]"
+        print(f" {prefix:<6} {item.name}: {item.message}")
+    print("=" * 65)
+
+    if report.has_failure:
+        print(" RESULT: FAILED - One or more critical safety checks failed.\n", file=sys.stderr)
+        return 1
+    elif report.has_warning:
+        print(" RESULT: PASSED WITH WARNINGS - System operational.\n")
+        return 0
+    else:
+        print(" RESULT: ALL CHECKS PASSED - System fully ready.\n")
+        return 0
+
+
+def handle_backup() -> int:
+    """Create hot SQLite database backup in data/backups (keeping last 14)."""
+    from app.services.doctor import create_sqlite_backup
+
+    base_dir = Path(__file__).resolve().parent.parent
+    db_path = base_dir / "data" / "coldreach.db"
+    backup_dir = base_dir / "data" / "backups"
+
+    if not db_path.is_file():
+        print(f"Error: Database file not found at {db_path}", file=sys.stderr)
+        return 1
+
+    try:
+        dest_path = create_sqlite_backup(db_path=db_path, backup_dir=backup_dir, max_keep=14)
+        print(f"\nSuccessfully created database backup:\n -> {dest_path}\n")
+        return 0
+    except Exception as e:
+        print(f"Error creating backup: {e}", file=sys.stderr)
+        return 1
+
+
+def handle_send_test(to_address: str) -> int:
+    """Send exactly one diagnostic test email in LIVE_MODE, refusing if recipient is a lead."""
+    from app.core.config import get_settings
+    from app.services.sender import OutgoingMail, SmtpSender
+
+    settings = get_settings()
+    if not settings.LIVE_MODE:
+        print(
+            "Error: send-test is prohibited when LIVE_MODE=false. "
+            "Safe-by-default prohibits outbound socket connections in dry-run mode.",
+            file=sys.stderr,
+        )
+        return 1
+
+    clean_to = to_address.strip().lower()
+    init_db()
+    with SessionLocal() as db:
+        is_lead = db.scalar(select(Lead.id).where(Lead.email == clean_to))
+        if is_lead:
+            print(
+                f"Error: Refusing test dispatch to '{clean_to}'. Address is registered as an active lead.",
+                file=sys.stderr,
+            )
+            return 1
+
+    mail = OutgoingMail(
+        to_email=clean_to,
+        from_email=settings.SENDER_EMAIL,
+        from_name=settings.SENDER_NAME,
+        subject="ColdReach Diagnostic Test Email",
+        body=(
+            f"Hello,\n\n"
+            f"This is a single live diagnostic test email dispatched from ColdReach.\n"
+            f"Server: {settings.SMTP_HOST}:{settings.SMTP_PORT}\n"
+            f"Sender: {settings.SENDER_EMAIL}\n\n"
+            f"Timestamp: {datetime.now(UTC).isoformat()}"
+        ),
+    )
+
+    sender = SmtpSender(settings=settings)
+    res = sender.send(mail)
+    if res.success:
+        print(f"\nTest email dispatched successfully to {clean_to} (ID: {res.message_id})\n")
+        return 0
+    else:
+        print(f"\nFailed to dispatch test email to {clean_to}: {res.error}\n", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint."""
     setup_logging()
@@ -519,6 +673,14 @@ def main(argv: list[str] | None = None) -> int:
         return handle_personalize(args.campaign)
     elif args.command == "review":
         return handle_review(args.campaign)
+    elif args.command == "seed-demo":
+        return handle_seed_demo(args.critical)
+    elif args.command == "doctor":
+        return handle_doctor(args.live_check)
+    elif args.command == "backup":
+        return handle_backup()
+    elif args.command == "send-test":
+        return handle_send_test(args.to)
 
     return 0
 

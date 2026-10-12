@@ -98,9 +98,39 @@ def create_app() -> FastAPI:
     return app
 
 
+def validate_api_host(host: str, allow_external: bool = False) -> None:
+    """Validate that API server binds only to loopback unless explicitly permitted."""
+    local_interfaces = {"127.0.0.1", "localhost", "::1"}
+    if host not in local_interfaces and not allow_external:
+        raise ValueError(
+            f"Security policy violation: API refuses to start on non-local interface '{host}' "
+            "without explicit --allow-external flag or ALLOW_EXTERNAL_API=true setting."
+        )
+
+
 app = create_app()
 
 if __name__ == "__main__":
+    import argparse
+    import sys
+
     import uvicorn
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    parser = argparse.ArgumentParser(description="ColdReach REST API Server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind")
+    parser.add_argument(
+        "--allow-external",
+        action="store_true",
+        help="Explicitly permit non-local interface",
+    )
+    parser.add_argument("--reload", action="store_true", default=True, help="Enable reload")
+    args = parser.parse_args()
+
+    try:
+        validate_api_host(args.host, allow_external=args.allow_external)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=args.reload)

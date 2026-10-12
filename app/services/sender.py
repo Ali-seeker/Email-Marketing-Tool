@@ -8,6 +8,7 @@ Implements SAFE BY DEFAULT architecture:
 - Plain-text, UTF-8 email formatting with unique Message-ID, Reply-To, and thread headers.
 """
 
+import re
 import smtplib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -81,25 +82,41 @@ def build_email_message(mail: OutgoingMail) -> tuple[PyEmailMessage, str]:
     # Content
     msg.set_content(mail.body, subtype="plain", charset="utf-8")
 
-    # Addressing
-    if mail.from_name:
-        msg["From"] = formataddr((mail.from_name, mail.from_email))
-    else:
-        msg["From"] = mail.from_email
+    # Addressing with CRLF sanitization to prevent email header injection
+    clean_from_name = (
+        re.sub(r"[\r\n]+", " ", mail.from_name).strip() if mail.from_name else None
+    )
+    clean_to_name = re.sub(r"[\r\n]+", " ", mail.to_name).strip() if mail.to_name else None
+    clean_from_email = re.sub(r"[\r\n]+", "", mail.from_email).strip()
+    clean_to_email = re.sub(r"[\r\n]+", "", mail.to_email).strip()
+    clean_subject = re.sub(r"[\r\n]+", " ", mail.subject).strip()
 
-    if mail.to_name:
-        msg["To"] = formataddr((mail.to_name, mail.to_email))
+    if clean_from_name:
+        msg["From"] = formataddr((clean_from_name, clean_from_email))
     else:
-        msg["To"] = mail.to_email
+        msg["From"] = clean_from_email
 
-    msg["Subject"] = mail.subject
-    msg["Reply-To"] = mail.reply_to or mail.from_email
+    if clean_to_name:
+        msg["To"] = formataddr((clean_to_name, clean_to_email))
+    else:
+        msg["To"] = clean_to_email
+
+    msg["Subject"] = clean_subject
+    reply_to_addr = (
+        re.sub(r"[\r\n]+", "", mail.reply_to).strip()
+        if mail.reply_to
+        else clean_from_email
+    )
+    msg["Reply-To"] = reply_to_addr
     msg["Date"] = formatdate(localtime=False)
 
     # Domain for Message-ID
     sender_domain = "example.com"
-    if "@" in mail.from_email:
-        sender_domain = mail.from_email.split("@")[1].strip()
+    if "@" in clean_from_email:
+        raw_dom = clean_from_email.split("@")[1].strip()
+        cleaned_dom = re.sub(r"[\r\n\s<>\"']+", "", raw_dom)
+        if cleaned_dom and "." in cleaned_dom:
+            sender_domain = cleaned_dom
 
     generated_msg_id = make_msgid(domain=sender_domain)
     msg["Message-ID"] = generated_msg_id
@@ -112,7 +129,7 @@ def build_email_message(mail: OutgoingMail) -> tuple[PyEmailMessage, str]:
             msg["References"] = mail.references
 
     # List-Unsubscribe header
-    msg["List-Unsubscribe"] = f"<mailto:{mail.from_email}?subject=unsubscribe>"
+    msg["List-Unsubscribe"] = f"<mailto:{clean_from_email}?subject=unsubscribe>"
 
     # Extra custom headers if provided
     if mail.extra_headers:
@@ -148,9 +165,19 @@ class FakeSender(MailSender):
         self.fail_error: str | None = None
         self.fail_count: int = 0
         self.max_failures: int | None = None
+        self.next_result: SendResult | None = None
+        self.results_queue: list[SendResult] = []
 
     def send(self, message: OutgoingMail) -> SendResult:
         """Simulate sending with configurable error injections."""
+        self.sent_messages.append(message)
+        if self.next_result is not None:
+            res = self.next_result
+            self.next_result = None
+            return res
+        if self.results_queue:
+            return self.results_queue.pop(0)
+
         if self.fail_mode is not None:
             if self.max_failures is None or self.fail_count < self.max_failures:
                 self.fail_count += 1
@@ -165,7 +192,6 @@ class FakeSender(MailSender):
         has_at = "@" in message.from_email
         sender_domain = message.from_email.split("@")[1] if has_at else "test.com"
         msg_id = make_msgid(domain=sender_domain)
-        self.sent_messages.append(message)
         return SendResult(success=True, message_id=msg_id)
 
 

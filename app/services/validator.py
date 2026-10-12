@@ -246,6 +246,7 @@ def validate_leads(
     dns_resolver: DnsResolver | None = None,
     verifier: EmailVerifier | None = None,
     clock: Clock | None = None,
+    campaign_id: int | None = None,
 ) -> ValidationSummary:
     """Validate all leads in status 'new' for a campaign or globally.
 
@@ -256,6 +257,7 @@ def validate_leads(
         dns_resolver: Optional DNS resolver (defaults to LiveDnsResolver).
         verifier: Optional external verifier (defaults to NullVerifier).
         clock: Optional Clock (defaults to system_clock).
+        campaign_id: Optional campaign ID filter.
 
     Returns:
         ValidationSummary with counts and details.
@@ -269,7 +271,9 @@ def validate_leads(
     )
 
     stmt = select(Lead).where(Lead.status == LeadStatus.NEW.value)
-    if campaign_name:
+    if campaign_id:
+        stmt = stmt.where(Lead.campaign_id == campaign_id)
+    elif campaign_name:
         stmt = stmt.join(Campaign).where(Campaign.name == campaign_name)
 
     leads = db.scalars(stmt).all()

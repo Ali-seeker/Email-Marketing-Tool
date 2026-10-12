@@ -742,3 +742,164 @@ def test_randomized_state_machine_guarantee(seq_db: tuple[Session, sessionmaker]
                     ).all()
                     for m in msgs:
                         assert can_send(sample_lead, m, db, clock=clock) is False
+
+
+def test_mark_not_interested_and_check_completed_leads(seq_db: tuple[Session, sessionmaker]) -> None:
+    """Verify mark_not_interested suppresses and check_completed_leads marks finished sequences."""
+    db, _ = seq_db
+    campaign = db.scalar(select(Campaign))
+    assert campaign is not None
+
+    clock = FakeClock(datetime(2026, 11, 1, 10, 0, tzinfo=UTC))
+    lead1 = _create_approved_lead(db, campaign.id, "notinterested@acme.com")
+    lead2 = _create_approved_lead(db, campaign.id, "completed@acme.com")
+    enroll(campaign, db, clock=clock)
+
+    # 1. mark_not_interested
+    mark_not_interested(lead1.id, db, clock=clock)
+    db.refresh(lead1)
+    assert lead1.status == LeadStatus.UNSUBSCRIBED.value
+    assert db.scalar(select(Suppression).where(Suppression.email == lead1.email)) is not None
+
+    # 2. check_completed_leads
+    # Mark all 4 steps of lead2 as sent 8 days ago
+    eight_days_ago = clock.now() - timedelta(days=8)
+    for s in (1, 2, 3, 4):
+        msg = db.scalar(select(EmailMessage).where(EmailMessage.lead_id == lead2.id, EmailMessage.step == s))
+        msg.status = EmailMessageStatus.SENT.value
+        msg.sent_at = eight_days_ago
+    lead2.status = LeadStatus.IN_SEQUENCE.value
+    db.commit()
+
+    completed = check_completed_leads(db, clock=clock)
+    assert lead2.id in [l.id for l in completed]
+    db.refresh(lead2)
+    assert lead2.status == LeadStatus.COMPLETED.value
+
+
+def test_can_send_step_window_and_weekday_checks(seq_db: tuple[Session, sessionmaker]) -> None:
+    """Verify can_send checks allowed weekdays and window times when status is SCHEDULED."""
+    db, _ = seq_db
+    campaign = db.scalar(select(Campaign))
+    assert campaign is not None
+
+    # Tuesday 10:00 (inside window and weekday)
+    clock = FakeClock(datetime(2026, 11, 3, 10, 0, tzinfo=UTC))
+    lead = _create_approved_lead(db, campaign.id, "window_test@acme.com")
+    lead.timezone = "UTC"
+    db.commit()
+
+    msg = EmailMessage(
+        lead_id=lead.id,
+        step=1,
+        subject="Hello",
+        body="Body",
+        status=EmailMessageStatus.SCHEDULED.value,
+        scheduled_at=clock.now(),
+    )
+    db.add(msg)
+    db.commit()
+
+    assert can_send(lead, msg, db, clock=clock) is True
+
+    # Advance to Sunday (outside weekday)
+    sunday_clock = FakeClock(datetime(2026, 11, 8, 10, 0, tzinfo=UTC))
+    assert can_send(lead, msg, db, clock=sunday_clock) is False
+
+    # Tuesday 23:00 (outside window)
+    night_clock = FakeClock(datetime(2026, 11, 3, 23, 0, tzinfo=UTC))
+    assert can_send(lead, msg, db, clock=night_clock) is False
+
+
+def test_sequencer_error_handling_and_not_found(seq_db: tuple[Session, sessionmaker]) -> None:
+    """Verify sequencer raises appropriate errors for missing IDs."""
+    db, _ = seq_db
+    import pytest
+    from app.services.sequencer import (
+        pause_campaign,
+        pause_lead,
+        resume_campaign,
+        resume_lead,
+        skip_step,
+    )
+
+    with pytest.raises(ValueError, match="not found"):
+        pause_campaign(99999, db)
+
+    with pytest.raises(ValueError, match="not found"):
+        resume_campaign(99999, db)
+
+    with pytest.raises(ValueError, match="not found"):
+        pause_lead(99999, db)
+
+    with pytest.raises(ValueError, match="not found"):
+        resume_lead(99999, db)
+
+    with pytest.raises(ValueError, match="not found"):
+        skip_step(99999, 1, db)
+
+
+def test_can_send_comprehensive_safety_gates(seq_db: tuple[Session, sessionmaker]) -> None:
+    """Verify all can_send safety gates and get_sequence_step_delay."""
+    from app.models import SequenceStep
+    from app.services.safety import trigger_killswitch
+    from app.services.sequencer import get_step_offset_days
+
+    db, _ = seq_db
+    campaign = db.scalar(select(Campaign))
+    assert campaign is not None
+
+    clock = FakeClock(datetime(2026, 11, 3, 10, 0, tzinfo=UTC))
+    lead = _create_approved_lead(db, campaign.id, "gates_test@acme.com")
+    db.commit()
+
+    msg1 = EmailMessage(
+        lead_id=lead.id,
+        step=1,
+        subject="Step 1",
+        body="Body",
+        status=EmailMessageStatus.APPROVED.value,
+    )
+    msg2 = EmailMessage(
+        lead_id=lead.id,
+        step=2,
+        subject="Step 2",
+        body="Body",
+        status=EmailMessageStatus.APPROVED.value,
+    )
+    db.add_all([msg1, msg2])
+    db.commit()
+
+    # 1. None handling
+    assert can_send(None, msg1, db, clock=clock) is False
+    assert can_send(lead, None, db, clock=clock) is False
+
+    # 2. Step 2 requires Step 1 to be sent
+    assert can_send(lead, msg2, db, clock=clock) is False
+
+    # 3. Earliest send at in future
+    msg1.earliest_send_at = clock.now() + timedelta(days=2)
+    assert can_send(lead, msg1, db, clock=clock) is False
+    msg1.earliest_send_at = None
+
+    # 4. Campaign not active
+    campaign.status = CampaignStatus.PAUSED.value
+    db.commit()
+    assert can_send(lead, msg1, db, clock=clock) is False
+    campaign.status = CampaignStatus.ACTIVE.value
+    db.commit()
+
+    # 5. Global killswitch active
+    trigger_killswitch(db, "Test killswitch for gates", clock=clock)
+    assert can_send(lead, msg1, db, clock=clock) is False
+
+    # 6. Custom SequenceStep delay
+    from app.services.sequencer import get_step_offset_days
+    camp2 = Campaign(name="Custom Delay Campaign")
+    db.add(camp2)
+    db.commit()
+    db.add(SequenceStep(campaign_id=camp2.id, step=2, delay_days=5, subjects=["Follow up"], bodies=["Body"]))
+    db.commit()
+    assert get_step_offset_days(db, camp2.id, 2) == 5
+
+

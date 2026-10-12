@@ -517,6 +517,40 @@ def resume_killswitch(
     return True
 
 
+@dataclass
+class ResumeResult:
+    """Outcome of resuming outreach after killswitch."""
+
+    success: bool
+    reduced_cap: int
+    message: str
+
+
+def resume_sending(
+    db: Session,
+    acknowledged_by: str = "operator",
+    root_cause: str = "Issue resolved",
+    clock: Clock | None = None,
+    notifier: Notifier | None = None,
+) -> ResumeResult:
+    """Convenience resumption helper returning structured result and reduced capacity."""
+    resume_killswitch(
+        acknowledgement="I ACKNOWLEDGE AND RESUME",
+        note=f"{acknowledged_by}: {root_cause}",
+        db=db,
+        clock=clock,
+        notifier=notifier,
+    )
+    from app.services.planner import HARD_MAX_LIMIT
+
+    reduced = max(1, HARD_MAX_LIMIT // 2)
+    return ResumeResult(
+        success=True,
+        reduced_cap=reduced,
+        message="Outreach resumed successfully. Daily cap halved for 3 days.",
+    )
+
+
 def is_killswitch_active(db: Session) -> bool:
     """Check if emergency global killswitch is currently engaged."""
     val = db.scalar(select(Setting.value).where(Setting.key == "KILLSWITCH"))

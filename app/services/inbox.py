@@ -193,10 +193,17 @@ class FakeMailboxReader(MailboxReader):
                     mail = IncomingMail.from_bytes(eml_file.read_bytes(), uid=idx)
                     self.messages.append(mail)
 
-    def add_message(self, raw_bytes: bytes) -> IncomingMail:
-        """Add a raw email to the fake mailbox assigning next sequential UID."""
+    def add_message(self, raw_bytes_or_mail: bytes | IncomingMail) -> IncomingMail:
+        """Add a raw email or IncomingMail to the fake mailbox assigning next sequential UID."""
+        if isinstance(raw_bytes_or_mail, IncomingMail):
+            next_uid = max([m.uid for m in self.messages], default=0) + 1
+            if not raw_bytes_or_mail.uid or raw_bytes_or_mail.uid < next_uid:
+                raw_bytes_or_mail.uid = next_uid
+            self.messages.append(raw_bytes_or_mail)
+            return raw_bytes_or_mail
+
         next_uid = max([m.uid for m in self.messages], default=0) + 1
-        mail = IncomingMail.from_bytes(raw_bytes, uid=next_uid)
+        mail = IncomingMail.from_bytes(raw_bytes_or_mail, uid=next_uid)
         self.messages.append(mail)
         return mail
 
@@ -622,6 +629,7 @@ def poll_inbox_and_process(
     reader: MailboxReader,
     db: Session,
     clock: Clock | None = None,
+    notifier: Notifier | None = None,
 ) -> tuple[int, dict[str, float]]:
     """Poll newly arrived emails using checkpointed UID and calculate bounce rates.
 
@@ -662,16 +670,29 @@ def poll_inbox_and_process(
     ):
         logger.critical(
             "BOUNCE RATE THRESHOLD EXCEEDED (7d: %.2f%%, last 100: %.2f%% >= %.2f%%)! "
-            "Pausing active campaigns immediately.",
+            "Engaging emergency killswitch and pausing active campaigns immediately.",
             stats["bounce_rate_7d"],
             stats["bounce_rate_last_100"],
             configured_threshold,
         )
-        db.execute(
-            update(Campaign)
-            .where(Campaign.status == CampaignStatus.ACTIVE.value)
-            .values(status=CampaignStatus.PAUSED.value)
-        )
-        db.commit()
+        from app.services.safety import is_killswitch_active, trigger_killswitch
+
+        if not is_killswitch_active(db):
+            trigger_killswitch(
+                db,
+                reason=(
+                    f"Bounce rate spike ({max(stats['bounce_rate_7d'], stats['bounce_rate_last_100']):.2f}%) "
+                    f"exceeded threshold of {configured_threshold:.2f}%"
+                ),
+                notifier=notifier,
+                clock=clk,
+            )
+        else:
+            db.execute(
+                update(Campaign)
+                .where(Campaign.status == CampaignStatus.ACTIVE.value)
+                .values(status=CampaignStatus.PAUSED.value)
+            )
+            db.commit()
 
     return len(new_mails), stats

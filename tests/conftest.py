@@ -1,5 +1,9 @@
 """Shared pytest fixtures."""
 
+import os
+
+os.environ["DISABLE_SQLALCHEMY_CEXT"] = "1"
+
 import pytest
 
 from app.core.clock import FakeClock

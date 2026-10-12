@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Pre-commit hook: scan staged files for secrets, tokens, and credentials.
+
+Blocks git commits if potential secrets are detected in staged modifications.
+"""
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# High-risk secret patterns to block
+SECRET_PATTERNS = [
+    (r"(?i)(api[_-]?token|api[_-]?key)\s*[:=]\s*['\"][a-zA-Z0-9_\-]{24,}['\"]", "API Token / Key"),
+    (r"(?i)(smtp[_-]?password|imap[_-]?password)\s*[:=]\s*['\"][^'\"]{6,}['\"]", "Mail Password"),
+    (r"sk-[a-zA-Z0-9]{20,}", "OpenAI Secret Key"),
+    (r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "Private Key"),
+    (r"AKIA[0-9A-Z]{16}", "AWS Access Key"),
+    (r"(?im)^\s*(?:export\s+)?LIVE_MODE\s*=\s*['\"]?true['\"]?\b", "LIVE_MODE=true accidentally staged"),
+]
+
+# Paths allowed to contain test fixtures, mocks, docs, or hook scripts
+ALLOWLIST_PATHS = [
+    r"tests/.*",
+    r"\.env\.example",
+    r"frontend/src/test/.*",
+    r"\.githooks/.*",
+    r"docs/.*",
+    r".*\.md",
+]
+
+
+def check_staged_content():
+    """Check staged files for forbidden secret patterns."""
+    try:
+        diff_output = subprocess.check_output(
+            ["git", "diff", "--cached", "--name-only"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return 0
+
+    staged_files = [f.strip() for f in diff_output.splitlines() if f.strip()]
+    violations = []
+
+    for file_path in staged_files:
+        if any(re.match(pattern, file_path) for pattern in ALLOWLIST_PATHS):
+            continue
+
+        try:
+            content = subprocess.check_output(
+                ["git", "show", f":{file_path}"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                errors="replace",
+            )
+        except Exception:
+            continue
+
+        for pattern, label in SECRET_PATTERNS:
+            match = re.search(pattern, content)
+            if match:
+                # Exclude obvious harmless placeholder tokens
+                matched_str = match.group(0).lower()
+                if "placeholder" in matched_str or "example" in matched_str or "dummy" in matched_str:
+                    continue
+                violations.append((file_path, label, match.group(0)[:30] + "..."))
+
+    if violations:
+        print("\n[ERROR] PRE-COMMIT HOOK REJECTED COMMIT: Potential secrets detected!")
+        for file_path, label, snippet in violations:
+            print(f"  - {file_path}: [{label}] -> {snippet}")
+        print("\nPlease remove the secret or use environment variables before committing.\n")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(check_staged_content())
