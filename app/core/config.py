@@ -140,6 +140,29 @@ class Settings(BaseSettings):
     ALERT_SMTP_PASSWORD: SecretStr = SecretStr("")
     DAILY_SUMMARY_HOUR: int = 9
 
+    # LLM & Personalization Settings
+    LLM_PROVIDER: str = Field(
+        default="gemini",
+        description="LLM provider: gemini, ollama, claude, or fake",
+    )
+    GEMINI_API_KEY: SecretStr | None = None
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
+    ANTHROPIC_API_KEY: SecretStr | None = None
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
+    LLM_DAILY_CALL_CAP: int = 200
+    AUTO_APPROVE: bool = Field(
+        default=False,
+        description="Automatically approve valid AI-generated personal notes.",
+    )
+
+    # Web Fetcher & Scraping Settings
+    WEB_FETCHER_TIMEOUT_SECONDS: float = 10.0
+    WEB_FETCHER_MAX_BYTES: int = 500 * 1024  # 500 KB limit
+    WEB_FETCHER_MAX_REDIRECTS: int = 3
+    WEB_CACHE_TTL_DAYS: int = 30
+
     @property
     def imap_username(self) -> str:
         """Resolve IMAP username."""

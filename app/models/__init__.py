@@ -10,6 +10,7 @@ from app.models.reply import Reply
 from app.models.sequence import SequenceStep
 from app.models.setting import Setting
 from app.models.suppression import Suppression
+from app.models.web_cache import WebPageCache
 
 __all__ = [
     "Campaign",
@@ -27,4 +28,5 @@ __all__ = [
     "Suppression",
     "OutboxEmail",
     "Reply",
+    "WebPageCache",
 ]

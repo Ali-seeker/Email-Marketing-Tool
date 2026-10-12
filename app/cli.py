@@ -132,6 +132,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target date for planning (YYYY-MM-DD)",
     )
 
+    # Subcommand: personalize
+    personalize_parser = subparsers.add_parser(
+        "personalize", help="Personalize leads for an outreach campaign"
+    )
+    personalize_parser.add_argument(
+        "--campaign",
+        "-c",
+        type=str,
+        required=True,
+        help="Name of target outreach campaign",
+    )
+
+    # Subcommand: review
+    review_parser = subparsers.add_parser(
+        "review", help="Interactive terminal approval queue review loop"
+    )
+    review_parser.add_argument(
+        "--campaign",
+        "-c",
+        type=str,
+        default=None,
+        help="Optional campaign name to filter review queue",
+    )
+
     return parser
 
 
@@ -366,6 +390,115 @@ def handle_plan(date_str: str | None) -> int:
         return 0
 
 
+def handle_personalize(campaign_name: str) -> int:
+    """Run personalization pipeline across valid leads in a campaign."""
+    init_db()
+    with SessionLocal() as db:
+        campaign = db.scalar(select(Campaign).where(Campaign.name == campaign_name))
+        if not campaign:
+            print(f"Error: Campaign '{campaign_name}' not found")
+            return 1
+
+        from app.core.config import get_settings
+        from app.services.fetcher import RealFetcher
+        from app.services.llm import get_llm_client
+        from app.services.personalizer import personalize_campaign
+
+        settings = get_settings()
+        fetcher = RealFetcher(settings=settings)
+        llm = get_llm_client(settings=settings)
+
+        print(f"Personalizing leads for campaign '{campaign.name}'...")
+        stats = personalize_campaign(campaign.id, db=db, fetcher=fetcher, llm=llm)
+
+        print("\n" + "=" * 55)
+        print(f"PERSONALIZATION REPORT: {campaign.name}")
+        print("=" * 55)
+        print(f"Total Eligible Leads       : {stats['total']}")
+        print(f"Personalized (Pending Queue): {stats['personalized']}")
+        print(f"Preserved Existing Note    : {stats['preserved']}")
+        print(f"Needs Manual Note          : {stats['needs_manual_note']}")
+        print("=" * 55 + "\n")
+        return 0
+
+
+def handle_review(campaign_name: str | None = None) -> int:
+    """Interactive approval queue review loop in the terminal."""
+    init_db()
+    with SessionLocal() as db:
+        campaign_id: int | None = None
+        if campaign_name:
+            campaign = db.scalar(select(Campaign).where(Campaign.name == campaign_name))
+            if not campaign:
+                print(f"Error: Campaign '{campaign_name}' not found")
+                return 1
+            campaign_id = campaign.id
+
+        from app.services.approval import approve, edit_and_approve, list_pending, reject
+
+        pending_leads = list_pending(campaign_id=campaign_id, db=db)
+        if not pending_leads:
+            print("\nNo leads awaiting approval in queue.\n")
+            return 0
+
+        print("\n" + "=" * 75)
+        print(f"APPROVAL QUEUE: {len(pending_leads)} lead(s) awaiting operator review")
+        print("=" * 75)
+
+        approved = 0
+        edited = 0
+        rejected = 0
+        skipped = 0
+
+        for i, lead in enumerate(pending_leads, 1):
+            lead_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip()
+            print(f"\n[{i}/{len(pending_leads)}] Lead: {lead_name} <{lead.email}>")
+            print(f"Company: {lead.company or 'N/A'} | Website: {lead.website or 'N/A'}")
+            print(f"Draft Note: {lead.personal_note}")
+            print(f"Evidence Quote: {lead.evidence_quote or 'N/A'}")
+            print("-" * 75)
+
+            while True:
+                choice = input("[a]pprove, [e]dit, [r]eject, [s]kip, [q]uit: ").strip().lower()
+                if choice == "a":
+                    approve(lead.id, db=db)
+                    approved += 1
+                    print(f"-> Approved: {lead.email}")
+                    break
+                elif choice == "e":
+                    new_note = input("Enter new personal note: ").strip()
+                    if new_note:
+                        edit_and_approve(lead.id, new_note=new_note, db=db)
+                        edited += 1
+                        print(f"-> Edited & Approved: {lead.email}")
+                        break
+                    else:
+                        print("Edit cancelled (empty note).")
+                elif choice == "r":
+                    reason = input("Rejection reason (optional): ").strip() or "Rejected in review"
+                    reject(lead.id, reason=reason, db=db)
+                    rejected += 1
+                    print(f"-> Rejected: {lead.email}")
+                    break
+                elif choice == "s":
+                    skipped += 1
+                    print(f"-> Skipped: {lead.email}")
+                    break
+                elif choice == "q":
+                    print("\nReview session terminated by operator.")
+                    return 0
+                else:
+                    print("Invalid selection. Please enter 'a', 'e', 'r', 's', or 'q'.")
+
+        print("\n" + "=" * 75)
+        print(
+            f"SESSION SUMMARY: {approved} approved, {edited} edited, "
+            f"{rejected} rejected, {skipped} skipped."
+        )
+        print("=" * 75 + "\n")
+        return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint."""
     setup_logging()
@@ -382,6 +515,10 @@ def main(argv: list[str] | None = None) -> int:
         return handle_suppress(args)
     elif args.command == "plan":
         return handle_plan(args.date)
+    elif args.command == "personalize":
+        return handle_personalize(args.campaign)
+    elif args.command == "review":
+        return handle_review(args.campaign)
 
     return 0
 

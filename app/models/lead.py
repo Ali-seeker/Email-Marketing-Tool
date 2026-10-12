@@ -24,6 +24,7 @@ class LeadStatus(StrEnum):
     INVALID = "invalid"
     PERSONALIZED = "personalized"
     APPROVED = "approved"
+    NEEDS_MANUAL_NOTE = "needs_manual_note"
     IN_SEQUENCE = "in_sequence"
     REPLIED = "replied"
     BOUNCED = "bounced"
@@ -66,6 +67,7 @@ class Lead(Base):
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     timezone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     personal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(50),
         default=LeadStatus.NEW.value,

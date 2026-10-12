@@ -116,6 +116,12 @@ def init_db(target_engine: Engine | None = None) -> None:
             pass
 
         try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN evidence_quote VARCHAR(500)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
             conn.execute(
                 text("ALTER TABLE email_messages ADD COLUMN subject_variant_index INTEGER")
             )

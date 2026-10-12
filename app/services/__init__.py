@@ -1,5 +1,13 @@
 """Business services export."""
 
+from app.services.approval import (
+    approve,
+    approve_many,
+    edit_and_approve,
+    list_pending,
+    regenerate,
+    reject,
+)
 from app.services.classifier import (
     ClassificationResult,
     InboundClassification,
@@ -13,6 +21,15 @@ from app.services.email_verifier import (
     HunterVerifier,
     NullVerifier,
 )
+from app.services.fetcher import (
+    FakeFetcher,
+    FetchResult,
+    RealFetcher,
+    ScrapedWebsite,
+    WebFetcher,
+    extract_html_metadata,
+    fetch_website,
+)
 from app.services.importer import ImportReport, import_leads
 from app.services.inbox import (
     FakeMailboxReader,
@@ -24,6 +41,18 @@ from app.services.inbox import (
     process_incoming_mail,
 )
 from app.services.linter import LintResult, lint_email
+from app.services.llm import (
+    ClaudeClient,
+    FakeLlm,
+    GeminiClient,
+    LlmClient,
+    LlmDailyCapExceededError,
+    LlmError,
+    LlmRateLimitError,
+    OllamaClient,
+    check_and_increment_daily_cap,
+    get_llm_client,
+)
 from app.services.notifier import (
     AlertRecord,
     CompositeNotifier,
@@ -34,6 +63,11 @@ from app.services.notifier import (
     TelegramNotifier,
     get_latest_alerts,
     send_daily_summary,
+)
+from app.services.personalizer import (
+    personalize_campaign,
+    personalize_lead,
+    verify_personal_note,
 )
 from app.services.planner import daily_capacity, due_emails, plan_day
 from app.services.safety import (
@@ -161,4 +195,30 @@ __all__ = [
     "resume_killswitch",
     "is_killswitch_active",
     "is_cap_halved_from_resume",
+    "WebFetcher",
+    "RealFetcher",
+    "FakeFetcher",
+    "FetchResult",
+    "ScrapedWebsite",
+    "extract_html_metadata",
+    "fetch_website",
+    "LlmClient",
+    "GeminiClient",
+    "OllamaClient",
+    "ClaudeClient",
+    "FakeLlm",
+    "get_llm_client",
+    "LlmError",
+    "LlmDailyCapExceededError",
+    "LlmRateLimitError",
+    "check_and_increment_daily_cap",
+    "verify_personal_note",
+    "personalize_lead",
+    "personalize_campaign",
+    "list_pending",
+    "approve",
+    "approve_many",
+    "edit_and_approve",
+    "reject",
+    "regenerate",
 ]
