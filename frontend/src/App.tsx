@@ -1,15 +1,18 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/design/ThemeProvider'
 import { ToastProvider } from '@/design/Toast'
 import { AppShell } from '@/design/AppShell'
-import { OverviewPage } from '@/pages/Overview'
-import { LeadsPage } from '@/pages/Leads'
-import { ApprovalPage } from '@/pages/Approval'
-import { RepliesPage } from '@/pages/Replies'
-import { CampaignsPage } from '@/pages/Campaigns'
-import { SafetyPage } from '@/pages/Safety'
-import { SettingsPage } from '@/pages/Settings'
+
+// Code-split pages for smaller bundle chunks and fast navigation
+const OverviewPage = lazy(() => import('@/pages/Overview').then((m) => ({ default: m.OverviewPage })))
+const LeadsPage = lazy(() => import('@/pages/Leads').then((m) => ({ default: m.LeadsPage })))
+const ApprovalPage = lazy(() => import('@/pages/Approval').then((m) => ({ default: m.ApprovalPage })))
+const RepliesPage = lazy(() => import('@/pages/Replies').then((m) => ({ default: m.RepliesPage })))
+const CampaignsPage = lazy(() => import('@/pages/Campaigns').then((m) => ({ default: m.CampaignsPage })))
+const SafetyPage = lazy(() => import('@/pages/Safety').then((m) => ({ default: m.SafetyPage })))
+const SettingsPage = lazy(() => import('@/pages/Settings').then((m) => ({ default: m.SettingsPage })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,16 +31,24 @@ export function App() {
         <ToastProvider>
           <BrowserRouter>
             <AppShell>
-              <Routes>
-                <Route path="/" element={<OverviewPage />} />
-                <Route path="/leads" element={<LeadsPage />} />
-                <Route path="/approval" element={<ApprovalPage />} />
-                <Route path="/replies" element={<RepliesPage />} />
-                <Route path="/campaigns" element={<CampaignsPage />} />
-                <Route path="/safety" element={<SafetyPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+              <Suspense
+                fallback={
+                  <div className="flex h-64 items-center justify-center" role="status" aria-label="Loading page">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  </div>
+                }
+              >
+                <Routes>
+                  <Route path="/" element={<OverviewPage />} />
+                  <Route path="/leads" element={<LeadsPage />} />
+                  <Route path="/approval" element={<ApprovalPage />} />
+                  <Route path="/replies" element={<RepliesPage />} />
+                  <Route path="/campaigns" element={<CampaignsPage />} />
+                  <Route path="/safety" element={<SafetyPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
             </AppShell>
           </BrowserRouter>
         </ToastProvider>

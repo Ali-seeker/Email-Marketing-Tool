@@ -6,6 +6,8 @@ Implements SAFE BY DEFAULT read-only architecture:
 - ImapReader: read-only IMAP reader over SSL using BODY.PEEK (LIVE_MODE=true only).
 """
 
+from __future__ import annotations
+
 import imaplib
 import re
 from abc import ABC, abstractmethod
@@ -23,6 +25,7 @@ from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     from app.services.classifier import ClassificationResult
+    from app.services.notifier import Notifier
 
 from app.core.clock import Clock, system_clock
 from app.core.config import Settings, get_settings
@@ -56,7 +59,7 @@ class IncomingMail:
     raw_message: PyEmailMessage | None = None
 
     @classmethod
-    def from_bytes(cls, raw_bytes: bytes, uid: int = 1) -> "IncomingMail":
+    def from_bytes(cls, raw_bytes: bytes, uid: int = 1) -> IncomingMail:
         """Parse raw RFC822 email bytes into IncomingMail."""
         msg: PyEmailMessage = message_from_bytes(raw_bytes, policy=default)
 
@@ -678,10 +681,11 @@ def poll_inbox_and_process(
         from app.services.safety import is_killswitch_active, trigger_killswitch
 
         if not is_killswitch_active(db):
+            peak_bounce = max(stats["bounce_rate_7d"], stats["bounce_rate_last_100"])
             trigger_killswitch(
                 db,
                 reason=(
-                    f"Bounce rate spike ({max(stats['bounce_rate_7d'], stats['bounce_rate_last_100']):.2f}%) "
+                    f"Bounce rate spike ({peak_bounce:.2f}%) "
                     f"exceeded threshold of {configured_threshold:.2f}%"
                 ),
                 notifier=notifier,

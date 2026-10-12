@@ -7,23 +7,20 @@ Verifies:
 4. Pre-commit secret scanning detects credential leaks.
 """
 
-import json
 from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_db
-from app.core.config import Settings, get_settings
+from app.core.config import get_settings
 from app.core.db import Base
 from app.main import create_app, validate_api_host
 from app.models.campaign import Campaign, CampaignStatus
-from app.models.lead import Lead, LeadStatus
 from app.models.setting import Setting
-
-
-from sqlalchemy.pool import StaticPool
 
 
 @pytest.fixture

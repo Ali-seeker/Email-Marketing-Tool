@@ -58,6 +58,9 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
 [dependency-groups]
 dev = [
     "bandit>=1.9.4",

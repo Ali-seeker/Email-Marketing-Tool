@@ -14,6 +14,7 @@ scraped text from the lead's website:
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC
 
 from sqlalchemy import select
@@ -425,10 +426,6 @@ def personalize_campaign(
 
     return stats
 
-
-from dataclasses import dataclass
-
-
 @dataclass
 class PersonalizeReport:
     """Report summarizing bulk personalization outcome."""
@@ -446,7 +443,7 @@ def personalize_leads(
     llm_client: LlmClient,
     clock: Clock | None = None,
 ) -> PersonalizeReport:
-    """Convenience helper to personalize eligible leads for a campaign and return a report object."""
+    """Convenience helper to personalize eligible leads for a campaign and return a report."""
     stats = personalize_campaign(
         campaign_name_or_id=campaign_id,
         db=db,

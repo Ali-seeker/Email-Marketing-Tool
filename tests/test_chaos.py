@@ -14,7 +14,6 @@ Covers:
 import io
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
-from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -25,7 +24,7 @@ from app.core.clock import FakeClock
 from app.core.db import Base
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email_message import EmailMessage, EmailMessageStatus
-from app.models.event import Event, EventType
+from app.models.event import Event
 from app.models.lead import Lead, LeadStatus
 from app.models.setting import Setting
 from app.services.importer import (

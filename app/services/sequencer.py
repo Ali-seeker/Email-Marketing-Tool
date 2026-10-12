@@ -171,6 +171,7 @@ def can_send(
     # 8. Local window and allowed weekday constraint for outbound dispatches
     if email.status in (EmailMessageStatus.SCHEDULED.value, EmailMessageStatus.SENDING.value):
         from zoneinfo import ZoneInfo
+
         from app.services.planner import (
             get_allowed_weekdays,
             get_mailbox_tz,

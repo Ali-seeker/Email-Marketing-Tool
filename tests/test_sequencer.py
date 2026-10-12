@@ -772,7 +772,7 @@ def test_mark_not_interested_and_check_completed_leads(seq_db: tuple[Session, se
     db.commit()
 
     completed = check_completed_leads(db, clock=clock)
-    assert lead2.id in [l.id for l in completed]
+    assert lead2.id in [item.id for item in completed]
     db.refresh(lead2)
     assert lead2.status == LeadStatus.COMPLETED.value
 
@@ -815,6 +815,7 @@ def test_sequencer_error_handling_and_not_found(seq_db: tuple[Session, sessionma
     """Verify sequencer raises appropriate errors for missing IDs."""
     db, _ = seq_db
     import pytest
+
     from app.services.sequencer import (
         pause_campaign,
         pause_lead,
@@ -894,7 +895,6 @@ def test_can_send_comprehensive_safety_gates(seq_db: tuple[Session, sessionmaker
     assert can_send(lead, msg1, db, clock=clock) is False
 
     # 6. Custom SequenceStep delay
-    from app.services.sequencer import get_step_offset_days
     camp2 = Campaign(name="Custom Delay Campaign")
     db.add(camp2)
     db.commit()

@@ -5,7 +5,6 @@ hard safety limits, database health, templates, and delivery infrastructure.
 """
 
 import imaplib
-import os
 import smtplib
 import sqlite3
 from dataclasses import dataclass
@@ -154,7 +153,9 @@ def run_doctor_checks(
                 CheckItem(
                     name="Ramp-up Schedule",
                     status="PASS",
-                    message=f"Current daily ramp cap is {ramp_cap} emails/day (<= {HARD_MAX_LIMIT}).",
+                    message=(
+                        f"Current daily ramp cap is {ramp_cap} emails/day (<= {HARD_MAX_LIMIT})."
+                    ),
                 )
             )
         else:
@@ -237,7 +238,10 @@ def run_doctor_checks(
                 CheckItem(
                     name="Database & Backups",
                     status="PASS",
-                    message=f"Database is writable. Found {len(backup_files)} backup(s) in {backup_dir.name}.",
+                    message=(
+                        f"Database is writable. Found {len(backup_files)} "
+                        f"backup(s) in {backup_dir.name}."
+                    ),
                 )
             )
         else:
@@ -268,7 +272,10 @@ def run_doctor_checks(
             CheckItem(
                 name="Sender Signature & Opt-Out",
                 status="PASS",
-                message=f"Configured: {settings.SENDER_NAME} ({settings.SENDER_COMPANY}, {settings.SENDER_WEBSITE})",
+                message=(
+                    f"Configured: {settings.SENDER_NAME} "
+                    f"({settings.SENDER_COMPANY}, {settings.SENDER_WEBSITE})"
+                ),
             )
         )
     else:
@@ -358,7 +365,9 @@ def run_doctor_checks(
             CheckItem(
                 name="Suppression List",
                 status="WARN",
-                message="Suppression list is empty. Consider importing an initial suppression file.",
+                message=(
+                    "Suppression list is empty. Consider importing an initial suppression file."
+                ),
             )
         )
 
@@ -375,7 +384,9 @@ def run_doctor_checks(
         CheckItem(
             name="Approval Queue Status",
             status="PASS",
-            message=f"{unapproved_count} lead(s) awaiting review, {approved_count} approved and ready.",
+            message=(
+                f"{unapproved_count} lead(s) awaiting review, {approved_count} approved and ready."
+            ),
         )
     )
 
@@ -400,7 +411,10 @@ def run_doctor_checks(
                     CheckItem(
                         name="Live SMTP Connection",
                         status="PASS",
-                        message=f"Connected and authenticated with {settings.SMTP_HOST}:{settings.SMTP_PORT}.",
+                        message=(
+                            f"Connected and authenticated with "
+                            f"{settings.SMTP_HOST}:{settings.SMTP_PORT}."
+                        ),
                     )
                 )
             except Exception as e:
@@ -422,7 +436,10 @@ def run_doctor_checks(
                     CheckItem(
                         name="Live IMAP Connection",
                         status="PASS",
-                        message=f"Connected and authenticated read-only with {settings.IMAP_HOST}:{settings.IMAP_PORT}.",
+                        message=(
+                            f"Connected and authenticated read-only with "
+                            f"{settings.IMAP_HOST}:{settings.IMAP_PORT}."
+                        ),
                     )
                 )
             except Exception as e:

@@ -22,22 +22,19 @@ Also tests bounce spike kill-switch activation and resumption.
 
 import random
 from collections import defaultdict
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import pytest
 from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.core.clock import FakeClock
 from app.core.db import Base
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email_message import EmailMessage, EmailMessageStatus
-from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus
 from app.models.reply import Reply
 from app.models.setting import Setting
-from app.models.suppression import Suppression
 from app.services.dns_resolver import FakeDnsResolver
 from app.services.fetcher import FakeFetcher
 from app.services.importer import import_leads
@@ -53,12 +50,11 @@ from app.services.planner import (
     plan_day,
 )
 from app.services.safety import (
-    evaluate_and_enforce_safety,
     is_killswitch_active,
     resume_sending,
 )
-from app.services.sender import FakeSender, OutgoingMail
-from app.services.sequencer import can_send, enroll, DEFAULT_STEP_DELAYS
+from app.services.sender import FakeSender
+from app.services.sequencer import DEFAULT_STEP_DELAYS, can_send, enroll
 from app.services.suppression import add as add_suppression
 from app.services.templates import load_default_sequence
 from app.services.validator import validate_leads
@@ -313,8 +309,8 @@ def test_30_day_simulation_and_invariants():
                 Lead.personal_note.is_not(None),
             )
         ).all()
-        for l in approved_leads:
-            l.status = LeadStatus.APPROVED.value
+        for lead_item in approved_leads:
+            lead_item.status = LeadStatus.APPROVED.value
         db.commit()
 
         enroll(campaign.id, db, clock=fake_clock)
@@ -331,9 +327,6 @@ def test_30_day_simulation_and_invariants():
         last_dispatch_time: datetime | None = None
         sent_lead_steps: dict[int, set[int]] = defaultdict(set)
         lead_step_sent_times: dict[tuple[int, int], datetime] = {}
-        daily_replies_count = 0
-        daily_bounces_count = 0
-        positive_hints_count = 0
 
         # =========================================================================
         # 30-DAY SIMULATION LOOP
@@ -343,7 +336,6 @@ def test_30_day_simulation_and_invariants():
 
         for day_offset in range(sim_days):
             current_day_date = (start_dt + timedelta(days=day_offset)).date()
-            is_weekend = current_day_date.weekday() >= 5  # Sat(5), Sun(6)
 
             # Advance clock to start of day: 00:00 AM Eastern
             fake_clock.set_time(
@@ -540,7 +532,7 @@ def test_bounce_spike_killswitch_trip_and_resume():
 
         leads = []
         for i in range(50):
-            l = Lead(
+            lead_obj = Lead(
                 campaign_id=campaign.id,
                 email=f"spike_lead_{i}@spikedomain.com",
                 first_name="Spike",
@@ -549,7 +541,7 @@ def test_bounce_spike_killswitch_trip_and_resume():
                 personal_note="Custom spike testing note.",
                 created_at=fake_clock.now(),
             )
-            leads.append(l)
+            leads.append(lead_obj)
         db.add_all(leads)
         db.commit()
 

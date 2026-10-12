@@ -624,7 +624,8 @@ def handle_send_test(to_address: str) -> int:
         is_lead = db.scalar(select(Lead.id).where(Lead.email == clean_to))
         if is_lead:
             print(
-                f"Error: Refusing test dispatch to '{clean_to}'. Address is registered as an active lead.",
+                f"Error: Refusing test dispatch to '{clean_to}'. "
+                "Address is registered as an active lead.",
                 file=sys.stderr,
             )
             return 1
