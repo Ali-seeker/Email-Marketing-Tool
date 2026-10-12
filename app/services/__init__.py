@@ -1,5 +1,11 @@
 """Business services export."""
 
+from app.services.classifier import (
+    ClassificationResult,
+    InboundClassification,
+    classify_inbound_mail,
+    match_mail_to_lead,
+)
 from app.services.dns_resolver import DnsResolver, FakeDnsResolver, LiveDnsResolver
 from app.services.email_verifier import (
     EmailVerifier,
@@ -8,6 +14,15 @@ from app.services.email_verifier import (
     NullVerifier,
 )
 from app.services.importer import ImportReport, import_leads
+from app.services.inbox import (
+    FakeMailboxReader,
+    ImapReader,
+    IncomingMail,
+    MailboxReader,
+    calculate_bounce_rates,
+    poll_inbox_and_process,
+    process_incoming_mail,
+)
 from app.services.linter import LintResult, lint_email
 from app.services.planner import daily_capacity, due_emails, plan_day
 from app.services.sender import (
@@ -65,4 +80,15 @@ __all__ = [
     "SendResult",
     "get_sender",
     "build_email_message",
+    "MailboxReader",
+    "FakeMailboxReader",
+    "ImapReader",
+    "IncomingMail",
+    "InboundClassification",
+    "ClassificationResult",
+    "classify_inbound_mail",
+    "match_mail_to_lead",
+    "process_incoming_mail",
+    "calculate_bounce_rates",
+    "poll_inbox_and_process",
 ]

@@ -123,11 +123,22 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "ColdReach Operator"
 
     # IMAP Configuration (inbound reply & bounce monitoring)
-    IMAP_HOST: str = "imap.example.com"
+    IMAP_HOST: str = "imap.gmail.com"
     IMAP_PORT: int = 993
-    IMAP_USERNAME: str = "user@example.com"
-    IMAP_PASSWORD: SecretStr = SecretStr("")
+    IMAP_USER: str = "user@example.com"
+    IMAP_APP_PASSWORD: SecretStr = SecretStr("")
     IMAP_USE_SSL: bool = True
+    INBOX_POLL_INTERVAL_SECONDS: int = 180
+
+    @property
+    def imap_username(self) -> str:
+        """Resolve IMAP username."""
+        return self.IMAP_USER
+
+    @property
+    def imap_password(self) -> str:
+        """Resolve IMAP plain password."""
+        return self.IMAP_APP_PASSWORD.get_secret_value()
 
 
 @lru_cache

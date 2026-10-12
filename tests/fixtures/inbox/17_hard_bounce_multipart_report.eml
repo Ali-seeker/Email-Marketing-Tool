@@ -1,0 +1,22 @@
+From: Mail Delivery Administrator <postmaster@corporate-exchange.com>
+To: alex@sender.com
+Subject: Undeliverable Mail: Sequence Step 1
+Date: Mon, 12 Oct 2026 11:25:00 +0000
+Message-ID: <bounce-17@corporate-exchange.com>
+Content-Type: multipart/report; report-type=delivery-status; boundary="boundary-17"
+
+--boundary-17
+Content-Type: text/plain; charset="utf-8"
+
+Your message cannot be delivered to rejected.user@acme.com.
+550 5.4.1 Recipient address rejected: Access denied.
+
+--boundary-17
+Content-Type: message/delivery-status
+
+Action: failed
+Status: 5.4.1
+Final-Recipient: rfc822; rejected.user@acme.com
+Diagnostic-Code: smtp; 550 5.4.1 Recipient address rejected
+
+--boundary-17--

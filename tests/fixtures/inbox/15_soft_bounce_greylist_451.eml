@@ -1,0 +1,22 @@
+From: postmaster@mailserver.acme.com
+To: alex@sender.com
+Subject: Warning: message delayed
+Date: Mon, 12 Oct 2026 11:15:00 +0000
+Message-ID: <bounce-15@mailserver.acme.com>
+Content-Type: multipart/report; report-type=delivery-status; boundary="boundary-15"
+
+--boundary-15
+Content-Type: text/plain; charset="utf-8"
+
+This is a warning that message delivery to greylist.user@acme.com was delayed.
+Server temporarily unavailable. Greylisting in progress.
+
+--boundary-15
+Content-Type: message/delivery-status
+
+Action: delayed
+Status: 4.5.1
+Final-Recipient: rfc822; greylist.user@acme.com
+Diagnostic-Code: smtp; 451 4.5.1 Temporary failure, please try again later.
+
+--boundary-15--

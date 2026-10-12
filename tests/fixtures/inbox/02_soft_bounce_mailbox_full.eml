@@ -1,0 +1,23 @@
+From: Mail Delivery System <postmaster@acme.com>
+To: alex@sender.com
+Subject: Undeliverable: Quick question regarding automation
+Date: Mon, 12 Oct 2026 10:10:00 +0000
+Message-ID: <bounce-02@acme.com>
+Content-Type: multipart/report; report-type=delivery-status; boundary="boundary-02"
+
+--boundary-02
+Content-Type: text/plain; charset="utf-8"
+
+Delivery failed temporarily. The recipient's mailbox is full and cannot accept messages.
+Action: delayed
+Status: 4.2.2 Mailbox full / quota exceeded
+
+--boundary-02
+Content-Type: message/delivery-status
+
+Action: delayed
+Status: 4.2.2
+Final-Recipient: rfc822; full.mailbox@acme.com
+Diagnostic-Code: smtp; 452 4.2.2 Mailbox is full
+
+--boundary-02--

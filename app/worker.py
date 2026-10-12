@@ -32,6 +32,12 @@ from app.models.email_message import EmailMessage, EmailMessageStatus
 from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus
 from app.models.setting import Setting
+from app.services.inbox import (
+    FakeMailboxReader,
+    ImapReader,
+    MailboxReader,
+    poll_inbox_and_process,
+)
 from app.services.linter import lint_email
 from app.services.planner import (
     HARD_MAX_LIMIT,
@@ -193,12 +199,19 @@ class Worker:
         sender: MailSender | None = None,
         clock: Clock | None = None,
         session_factory: Callable[[], Session] | sessionmaker | None = None,
+        inbox_reader: MailboxReader | None = None,
+        inbox_poll_interval: float | None = None,
     ) -> None:
         self.poll_interval = poll_interval
         self.clock = clock or system_clock
         self._sender = sender
+        self.inbox_reader = inbox_reader
         self.session_factory = session_factory or SessionLocal
         self.settings = get_settings()
+        self.inbox_poll_interval = inbox_poll_interval or float(
+            self.settings.INBOX_POLL_INTERVAL_SECONDS
+        )
+        self._last_inbox_poll: datetime | None = None
         self._running = True
 
     def get_sender(self, db: Session) -> MailSender:
@@ -206,6 +219,21 @@ class Worker:
         if self._sender is not None:
             return self._sender
         return get_sender(db=db)
+
+    def get_inbox_reader(self) -> MailboxReader:
+        """Return configured or injected MailboxReader."""
+        if self.inbox_reader is not None:
+            return self.inbox_reader
+        if self.settings.LIVE_MODE:
+            return ImapReader(settings=self.settings)
+        return FakeMailboxReader()
+
+    def poll_inbox(self, db: Session, now: datetime) -> tuple[int, dict[str, float]]:
+        """Poll incoming emails, process bounces/replies, and calculate bounce rates."""
+        reader = self.get_inbox_reader()
+        new_count, stats = poll_inbox_and_process(reader=reader, db=db, clock=self.clock)
+        self._last_inbox_poll = now
+        return new_count, stats
 
     def stop(self, *_) -> None:
         """Signal handler to terminate worker loop gracefully."""
@@ -485,8 +513,11 @@ class Worker:
             logger.error("Message #%d permanently failed after 2 retries", msg.id)
             return True
 
-    def run_once(self) -> int:
+    def run_once(self, poll_inbox_now: bool | None = None) -> int:
         """Execute a single polling and dispatch cycle.
+
+        Args:
+            poll_inbox_now: Optional manual override to force inbox polling during this cycle.
 
         Returns:
             Number of successfully dispatched emails.
@@ -496,7 +527,22 @@ class Worker:
             now = now.replace(tzinfo=UTC)
 
         with self.session_factory() as db:
-            # Check global killswitch
+            # 1. Periodic inbox monitoring poll (default every 3m / configurable)
+            should_poll = False
+            if poll_inbox_now is True:
+                should_poll = True
+            elif poll_inbox_now is None:
+                if self._last_inbox_poll is None:
+                    should_poll = True
+                else:
+                    elapsed = (now - self._last_inbox_poll).total_seconds()
+                    if elapsed >= self.inbox_poll_interval:
+                        should_poll = True
+
+            if should_poll:
+                self.poll_inbox(db, now)
+
+            # 2. Check global killswitch
             if is_killswitch_active(db):
                 logger.warning("Global kill-switch active. Worker cycle skipped.")
                 return 0
