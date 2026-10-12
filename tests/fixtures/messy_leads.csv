@@ -1,0 +1,11 @@
+  E-MAIL  ,  First Name  ,  Last Name  ,  Company Name  ,  URL  ,  Job Title  ,  Country
+alice@acme.com,alice,smith,Acme Corp,acme.com,Founder,US
+ALICE@ACME.COM,Alice,Smith,Acme Corp,acme.com,Founder,US
+bad-email-without-at,Bad,User,Spam Inc,spam.com,Tester,US
+missing-domain@,No,Domain,Broken Co,broken.com,Dev,US
+,Ghost,User,Ghost LLC,ghost.com,Spectre,US
+suppressed@victim.com,Sam,Suppressed,Block Co,block.com,Manager,US
+   rene@montreal.ca   , René , Lévesque , MTL Tech , http://mtl.ca/ , VP , Canada
+muller@munich.de, Jürgen , Müller , Munich Auto , munich.de , Director , Germany
+​extra_junk@example.com​, Zack , Taylor , Clean Co , cleanco.com , Dev , Australia
+   ,   ,   ,   ,   ,   ,   

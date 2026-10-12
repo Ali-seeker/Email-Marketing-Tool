@@ -61,6 +61,14 @@ SessionLocal = sessionmaker(
 )
 
 
+def init_db(target_engine: Engine | None = None) -> None:
+    """Create all database tables using metadata.create_all."""
+    import app.models  # noqa: F401
+
+    eng = target_engine or engine
+    Base.metadata.create_all(bind=eng)
+
+
 def get_db() -> Generator[Session, None, None]:
     """Dependency provider yielding a scoped database session."""
     db = SessionLocal()

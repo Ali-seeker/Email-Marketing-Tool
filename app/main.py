@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.db import init_db
 from app.core.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
@@ -20,8 +21,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for startup and shutdown hooks."""
     setup_logging()
     settings = get_settings()
+    init_db()
     logger.info(
-        "ColdReach starting up. SAFE_BY_DEFAULT active: LIVE_MODE=%s",
+        "ColdReach starting up. Database initialized. SAFE_BY_DEFAULT active: LIVE_MODE=%s",
         settings.LIVE_MODE,
     )
     yield

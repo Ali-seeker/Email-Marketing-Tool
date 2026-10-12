@@ -1,0 +1,6 @@
+email,first_name,last_name,company,website,title,country,timezone,personal_note
+alice@acme.com,alice,smith,Acme Corp,acme.com,Founder,US,,Loved your podcast
+bob@tech.co.uk,BOB,JONES,Tech UK,http://tech.co.uk/,CTO,UK,Europe/London,Great talk
+charlie@dubai.ae,charlie,khan,Gulf Ventures,https://gulf.ae,Partner,UAE,,See you at Gitex
+dawood@pakistan.pk,dawood,ali,Dev Studio,devstudio.pk/,Lead Architect,Pakistan,,Nice open source repo
+eva@berlin.de,EVA,WEISS,Berlin AI,berlin-ai.de,CEO,Germany,,Impressive blog
