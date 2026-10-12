@@ -130,6 +130,16 @@ class Settings(BaseSettings):
     IMAP_USE_SSL: bool = True
     INBOX_POLL_INTERVAL_SECONDS: int = 180
 
+    # Safety & Alerting Configuration
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_CHAT_ID: str | None = None
+    ALERT_EMAIL: str | None = None
+    ALERT_SMTP_HOST: str | None = None
+    ALERT_SMTP_PORT: int = 587
+    ALERT_SMTP_USERNAME: str | None = None
+    ALERT_SMTP_PASSWORD: SecretStr = SecretStr("")
+    DAILY_SUMMARY_HOUR: int = 9
+
     @property
     def imap_username(self) -> str:
         """Resolve IMAP username."""

@@ -217,6 +217,12 @@ def due_emails(
         close_session_on_exit = True
 
     try:
+        from app.services.safety import is_killswitch_active
+
+        if is_killswitch_active(actual_db):
+            logger.info("Kill-switch active; due_emails returning empty")
+            return []
+
         # Query approved emails
         stmt = (
             select(EmailMessage)
@@ -328,6 +334,11 @@ def daily_capacity(
 
         effective_cap = min(base_cap, configured_max_int, HARD_MAX_LIMIT)
 
+        from app.services.safety import is_cap_halved_from_resume
+
+        if is_cap_halved_from_resume(db, target_date):
+            effective_cap = max(1, effective_cap // 2)
+
         # Count emails already sent or scheduled on target_date in operator's mailbox timezone
         mailbox_tz = get_mailbox_tz(db)
         stmt = select(EmailMessage).where(
@@ -409,6 +420,12 @@ def plan_day(
                 target_date,
                 start_date,
             )
+            return []
+
+        from app.services.safety import is_killswitch_active
+
+        if is_killswitch_active(db):
+            logger.info("Kill-switch active; plan_day returning 0")
             return []
 
         remaining_cap = daily_capacity(target_date, db)

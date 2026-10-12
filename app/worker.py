@@ -31,7 +31,6 @@ from app.models.campaign import Campaign, CampaignStatus
 from app.models.email_message import EmailMessage, EmailMessageStatus
 from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus
-from app.models.setting import Setting
 from app.services.inbox import (
     FakeMailboxReader,
     ImapReader,
@@ -39,12 +38,19 @@ from app.services.inbox import (
     poll_inbox_and_process,
 )
 from app.services.linter import lint_email
+from app.services.notifier import LogNotifier, Notifier, send_daily_summary
 from app.services.planner import (
     HARD_MAX_LIMIT,
     get_mailbox_tz,
     get_outreach_start_date,
     get_ramp_up_cap,
     get_setting,
+)
+from app.services.safety import (
+    evaluate_and_enforce_safety,
+    is_cap_halved_from_resume,
+    is_killswitch_active,
+    trigger_killswitch,
 )
 from app.services.sender import (
     KILLSWITCH_KEYWORDS,
@@ -60,44 +66,6 @@ from app.services.sequencer import (
 from app.services.suppression import is_suppressed
 
 logger = get_logger(__name__)
-
-
-def is_killswitch_active(db: Session) -> bool:
-    """Check if the global emergency kill-switch is active."""
-    val = db.scalar(select(Setting.value).where(Setting.key == "KILLSWITCH"))
-    if val is not None and val.strip().lower() in ("on", "true", "1", "yes"):
-        return True
-    return False
-
-
-def trigger_killswitch(db: Session, reason: str, clock: Clock) -> None:
-    """Engage global emergency kill-switch, write setting and audit event."""
-    now = clock.now()
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=UTC)
-
-    ks_setting = db.get(Setting, "KILLSWITCH")
-    if ks_setting:
-        ks_setting.value = "on"
-    else:
-        db.add(Setting(key="KILLSWITCH", value="on"))
-
-    reason_setting = db.get(Setting, "KILLSWITCH_REASON")
-    if reason_setting:
-        reason_setting.value = reason
-    else:
-        db.add(Setting(key="KILLSWITCH_REASON", value=reason))
-
-    db.add(
-        Event(
-            lead_id=None,
-            type=EventType.KILLSWITCH.value,
-            payload={"reason": reason},
-            created_at=now,
-        )
-    )
-    db.commit()
-    logger.critical("GLOBAL KILL-SWITCH ENGAGED! Reason: %s", reason)
 
 
 def recover_stuck_sending_messages(db: Session, clock: Clock) -> int:
@@ -170,7 +138,12 @@ def get_daily_send_cap(db: Session, target_date: date) -> int:
         return hard_limit
 
     base_cap = get_ramp_up_cap(target_date, start_date)
-    return min(base_cap, hard_limit)
+    final_cap = min(base_cap, hard_limit)
+
+    if is_cap_halved_from_resume(db, target_date):
+        final_cap = max(1, final_cap // 2)
+
+    return final_cap
 
 
 def get_sent_today_count(db: Session, today_date: date, mailbox_tz: ZoneInfo) -> int:
@@ -206,6 +179,7 @@ class Worker:
         session_factory: Callable[[], Session] | sessionmaker | None = None,
         inbox_reader: MailboxReader | None = None,
         inbox_poll_interval: float | None = None,
+        notifier: Notifier | None = None,
     ) -> None:
         self.poll_interval = poll_interval
         self.clock = clock or system_clock
@@ -216,6 +190,7 @@ class Worker:
         self.inbox_poll_interval = inbox_poll_interval or float(
             self.settings.INBOX_POLL_INTERVAL_SECONDS
         )
+        self.notifier = notifier or LogNotifier()
         self._last_inbox_poll: datetime | None = None
         self._running = True
 
@@ -238,6 +213,8 @@ class Worker:
         reader = self.get_inbox_reader()
         new_count, stats = poll_inbox_and_process(reader=reader, db=db, clock=self.clock)
         self._last_inbox_poll = now
+        # Recalculate health metrics and enforce safety rules after every inbox poll
+        evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
         return new_count, stats
 
     def stop(self, *_) -> None:
@@ -456,6 +433,9 @@ class Worker:
 
             # Advance sequencer lifecycle for next sequence step
             on_email_sent(msg, db, clock=self.clock)
+
+            # Recalculate health metrics and enforce safety rules after every send
+            evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
             return True
 
         # Dispatch Failure Handling
@@ -469,7 +449,12 @@ class Worker:
             or any(kw in lower_err for kw in KILLSWITCH_KEYWORDS)
         )
         if is_killswitch:
-            trigger_killswitch(db, reason=err_msg, clock=self.clock)
+            trigger_killswitch(
+                db,
+                reason=err_msg,
+                notifier=self.notifier,
+                clock=self.clock,
+            )
             msg.status = EmailMessageStatus.FAILED.value
             msg.error = f"Kill-switch triggered: {err_msg}"
             db.commit()
@@ -490,6 +475,7 @@ class Worker:
             )
             db.commit()
             logger.error("Permanent send error for lead %s: %s", lead.email, err_msg)
+            evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
             return True
 
         # Transient failure (SMTP 4xx, network timeout) -> retry up to 2 times
@@ -508,6 +494,7 @@ class Worker:
             )
             db.commit()
             logger.warning("Message #%d scheduled for retry 1 in 10m: %s", msg.id, err_msg)
+            evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
             return True
         elif msg.retry_count == 1:
             msg.retry_count = 2
@@ -524,6 +511,7 @@ class Worker:
             )
             db.commit()
             logger.warning("Message #%d scheduled for retry 2 in 30m: %s", msg.id, err_msg)
+            evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
             return True
         else:
             # Retried twice already; mark failed permanently
@@ -539,6 +527,7 @@ class Worker:
             )
             db.commit()
             logger.error("Message #%d permanently failed after 2 retries", msg.id)
+            evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
             return True
 
     def run_once(self, poll_inbox_now: bool | None = None) -> int:
@@ -569,6 +558,9 @@ class Worker:
 
             if should_poll:
                 self.poll_inbox(db, now)
+
+            # Daily summary dispatch (configurable hour, once per calendar day)
+            send_daily_summary(db, notifier=self.notifier, clock=self.clock)
 
             # 2. Check for sequence completion (Step 4 sent > 7 days ago with no reply)
             check_completed_leads(db, clock=self.clock)
