@@ -19,9 +19,12 @@ class EmailMessageStatus(StrEnum):
     DRAFT = "draft"
     APPROVED = "approved"
     SCHEDULED = "scheduled"
+    SENDING = "sending"
     SENT = "sent"
+    SENT_DRY_RUN = "sent (dry-run)"
     FAILED = "failed"
     SKIPPED = "skipped"
+    NEEDS_REVIEW = "needs_review"
 
 
 class EmailMessage(Base):
@@ -56,6 +59,12 @@ class EmailMessage(Base):
         nullable=True,
         index=True,
     )
+    sending_started_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime,
+        nullable=True,
+        index=True,
+    )
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     subject_variant_index: Mapped[int | None] = mapped_column(Integer, nullable=True)

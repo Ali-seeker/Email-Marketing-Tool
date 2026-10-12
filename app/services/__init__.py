@@ -10,6 +10,16 @@ from app.services.email_verifier import (
 from app.services.importer import ImportReport, import_leads
 from app.services.linter import LintResult, lint_email
 from app.services.planner import daily_capacity, due_emails, plan_day
+from app.services.sender import (
+    DryRunSender,
+    FakeSender,
+    MailSender,
+    OutgoingMail,
+    SendResult,
+    SmtpSender,
+    build_email_message,
+    get_sender,
+)
 from app.services.suppression import add as add_suppression
 from app.services.suppression import is_suppressed
 from app.services.templates import (
@@ -47,4 +57,12 @@ __all__ = [
     "daily_capacity",
     "due_emails",
     "plan_day",
+    "MailSender",
+    "FakeSender",
+    "DryRunSender",
+    "SmtpSender",
+    "OutgoingMail",
+    "SendResult",
+    "get_sender",
+    "build_email_message",
 ]

@@ -129,13 +129,13 @@ def test_every_ramp_up_tier(plan_db: Session) -> None:
     assert daily_capacity(date(2026, 11, 5), db=plan_db) == 15
 
     # Days 7-13 -> 20/day
-    assert get_ramp_up_cap(date(2026, 11, 8), start_date) == 20   # Day 7
+    assert get_ramp_up_cap(date(2026, 11, 8), start_date) == 20  # Day 7
     assert get_ramp_up_cap(date(2026, 11, 14), start_date) == 20  # Day 13
     assert daily_capacity(date(2026, 11, 10), db=plan_db) == 20
 
     # Day 14+ -> 25/day
     assert get_ramp_up_cap(date(2026, 11, 15), start_date) == 25  # Day 14
-    assert get_ramp_up_cap(date(2026, 12, 1), start_date) == 25   # Day 30
+    assert get_ramp_up_cap(date(2026, 12, 1), start_date) == 25  # Day 30
     assert daily_capacity(date(2026, 11, 15), db=plan_db) == 25
 
 
@@ -194,10 +194,10 @@ def test_send_window_respected_in_4_timezones_including_dst(plan_db: Session) ->
     assert campaign is not None
 
     timezones = [
-        "America/New_York",      # Eastern (DST ends Nov 1, 2026)
-        "Europe/London",         # London (DST ended Oct 25, 2026)
-        "Asia/Tokyo",            # Tokyo (No DST)
-        "America/Los_Angeles",   # Pacific (DST ends Nov 1, 2026)
+        "America/New_York",  # Eastern (DST ends Nov 1, 2026)
+        "Europe/London",  # London (DST ended Oct 25, 2026)
+        "Asia/Tokyo",  # Tokyo (No DST)
+        "America/Los_Angeles",  # Pacific (DST ends Nov 1, 2026)
     ]
 
     for idx, tz_name in enumerate(timezones):
@@ -260,7 +260,7 @@ def test_min_gap_holds_across_100_planned_emails(plan_db: Session) -> None:
         t2 = all_planned[i + 1].scheduled_at
         assert t1 is not None and t2 is not None
         gap_sec = (t2 - t1).total_seconds()
-        assert gap_sec >= 120, f"Gap between #{i} and #{i+1} was {gap_sec}s (< 120s)"
+        assert gap_sec >= 120, f"Gap between #{i} and #{i + 1} was {gap_sec}s (< 120s)"
 
 
 def test_follow_up_timing_counted_from_actual_sent_time(plan_db: Session) -> None:

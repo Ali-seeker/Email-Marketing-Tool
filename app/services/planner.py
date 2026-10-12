@@ -332,7 +332,9 @@ def daily_capacity(
             EmailMessage.status.in_(
                 (
                     EmailMessageStatus.SCHEDULED.value,
+                    EmailMessageStatus.SENDING.value,
                     EmailMessageStatus.SENT.value,
+                    EmailMessageStatus.SENT_DRY_RUN.value,
                 )
             )
         )
@@ -340,10 +342,13 @@ def daily_capacity(
 
         used_count = 0
         for msg in existing_msgs:
-            if msg.status == EmailMessageStatus.SCHEDULED.value:
+            if msg.status in (
+                EmailMessageStatus.SCHEDULED.value,
+                EmailMessageStatus.SENDING.value,
+            ):
                 ref_dt = msg.scheduled_at
             else:
-                ref_dt = msg.sent_at
+                ref_dt = msg.sent_at or msg.scheduled_at
             if ref_dt is None:
                 ref_dt = msg.scheduled_at or msg.sent_at
             if ref_dt is None:
