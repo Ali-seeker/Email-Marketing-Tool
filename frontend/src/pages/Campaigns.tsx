@@ -6,7 +6,6 @@ import {
   Play,
   Pause,
   Clock,
-  Sparkles,
   Calendar,
   Layers,
   ShieldAlert,
@@ -89,22 +88,7 @@ export function CampaignsPage() {
     },
   })
 
-  const enrollMutation = useMutation({
-    mutationFn: (campaignId?: number) => api.enrollment.enroll(campaignId),
-    onSuccess: (data) => {
-      toast({
-        title: 'Leads Enrolled',
-        message: `Successfully enrolled ${data.enrolled_count} approved leads into sequence!`,
-        type: 'success',
-      })
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-      queryClient.invalidateQueries({ queryKey: ['leads'] })
-      queryClient.invalidateQueries({ queryKey: ['planPreview'] })
-    },
-    onError: (err: any) => {
-      toast({ title: 'Enrollment Failed', message: err.message, type: 'error' })
-    },
-  })
+
 
   const planDispatchesMutation = useMutation({
     mutationFn: () => api.planning.plan(),
@@ -224,26 +208,64 @@ export function CampaignsPage() {
                   key={camp.id}
                   className="bg-card border border-border rounded-lg p-4 space-y-3 transition-shadow hover:shadow-xs"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/50 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base font-bold text-foreground">{camp.name}</span>
-                        <StatusChip
-                          status={camp.status}
-                          variant={isActive ? 'success' : isPaused ? 'warning' : 'neutral'}
-                        />
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-3">
-                        <span>Niche: <strong>{camp.niche || 'B2B'}</strong></span>
-                        <span>•</span>
-                        <span>Total Leads: <strong>{camp.leads_count ?? 0}</strong></span>
-                        <span>•</span>
-                        <span>In Sequence: <strong>{camp.active_leads_count ?? 0}</strong></span>
-                      </div>
+                  {/* Card Header: Title & Campaign State Control */}
+                  <div className="flex items-center justify-between gap-3 border-b border-border/50 pb-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-base font-bold text-foreground truncate">{camp.name}</span>
+                      <StatusChip
+                        status={camp.status}
+                        variant={isActive ? 'success' : isPaused ? 'warning' : 'neutral'}
+                      />
                     </div>
 
-                    {/* Campaign Action Buttons */}
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Campaign Master Toggle */}
+                    <div className="shrink-0">
+                      {isActive ? (
+                        <button
+                          type="button"
+                          disabled={pauseMutation.isPending}
+                          onClick={() => pauseMutation.mutate(camp.id)}
+                          className="px-3 py-1.5 text-xs font-semibold border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Pause className="w-3.5 h-3.5" /> Pause Campaign
+                        </button>
+                      ) : isPaused ? (
+                        <button
+                          type="button"
+                          disabled={resumeMutation.isPending}
+                          onClick={() => resumeMutation.mutate(camp.id)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Play className="w-3.5 h-3.5" /> Resume Campaign
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={activateMutation.isPending}
+                          onClick={() => activateMutation.mutate(camp.id)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Play className="w-3.5 h-3.5" /> Activate Campaign
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Sub-bar: Metadata Badges & Action Buttons */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      <span className="px-2 py-0.5 rounded bg-muted/60 text-muted-foreground font-medium">
+                        Niche: <strong className="text-foreground">{camp.niche || 'B2B'}</strong>
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-muted/60 text-muted-foreground font-medium">
+                        Total Leads: <strong className="text-foreground">{camp.leads_count ?? 0}</strong>
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-medium border border-indigo-500/20">
+                        In Sequence: <strong className="text-foreground">{camp.active_leads_count ?? 0}</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
                       <button
                         type="button"
                         onClick={() =>
@@ -286,46 +308,6 @@ export function CampaignsPage() {
                         <Upload className="w-3.5 h-3.5" />
                         Add Leads
                       </Link>
-
-                      <button
-                        type="button"
-                        disabled={enrollMutation.isPending}
-                        onClick={() => enrollMutation.mutate(camp.id)}
-                        className="px-2.5 py-1.5 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 flex items-center gap-1.5 transition-colors cursor-pointer"
-                        title="Enroll approved leads into 4-step sequence"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Enroll Leads
-                      </button>
-
-                      {isActive ? (
-                        <button
-                          type="button"
-                          disabled={pauseMutation.isPending}
-                          onClick={() => pauseMutation.mutate(camp.id)}
-                          className="px-3 py-1.5 text-xs font-semibold border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <Pause className="w-3.5 h-3.5" /> Pause
-                        </button>
-                      ) : isPaused ? (
-                        <button
-                          type="button"
-                          disabled={resumeMutation.isPending}
-                          onClick={() => resumeMutation.mutate(camp.id)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                        >
-                          <Play className="w-3.5 h-3.5" /> Resume Campaign
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={activateMutation.isPending}
-                          onClick={() => activateMutation.mutate(camp.id)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                        >
-                          <Play className="w-3.5 h-3.5" /> Activate Campaign
-                        </button>
-                      )}
                     </div>
                   </div>
 

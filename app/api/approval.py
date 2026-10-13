@@ -23,6 +23,7 @@ from app.services.approval import (
     regenerate,
     reject,
 )
+from app.services.sequencer import enroll
 
 router = APIRouter(prefix="/approval", tags=["Approval Queue"])
 
@@ -72,6 +73,11 @@ def approve_draft(
     """Approve a personalized lead draft for sequence enrollment."""
     try:
         lead = approve(lead_id, db=db, clock=clock)
+        if lead.campaign_id:
+            try:
+                enroll(lead.campaign_id, db=db, clock=clock)
+            except Exception:
+                pass
         return LeadResponse.model_validate(lead)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
@@ -85,6 +91,12 @@ def bulk_approve_drafts(
 ) -> dict[str, object]:
     """Batch approve multiple personalized lead drafts."""
     approved_leads = approve_many(payload.lead_ids, db=db, clock=clock)
+    campaign_ids = {ld.campaign_id for ld in approved_leads if ld.campaign_id}
+    for cid in campaign_ids:
+        try:
+            enroll(cid, db=db, clock=clock)
+        except Exception:
+            pass
     return {
         "requested": len(payload.lead_ids),
         "approved": len(approved_leads),
@@ -102,6 +114,11 @@ def edit_and_approve_draft(
     """Edit personal note and immediately approve lead."""
     try:
         lead = edit_and_approve(lead_id, new_note=payload.new_note, db=db, clock=clock)
+        if lead.campaign_id:
+            try:
+                enroll(lead.campaign_id, db=db, clock=clock)
+            except Exception:
+                pass
         return LeadResponse.model_validate(lead)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
