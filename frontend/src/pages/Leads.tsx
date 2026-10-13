@@ -304,7 +304,7 @@ export function LeadsPage() {
             Filter, inspect account timelines, validate emails, and generate drafts directly from the dashboard.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 shrink-0">
           {selectedLeads.length > 0 && (
             <div className="flex items-center gap-1.5 mr-2">
               <button
@@ -347,11 +347,7 @@ export function LeadsPage() {
             ) : (
               <ShieldCheck className="w-3.5 h-3.5" />
             )}
-            {validateMutation.isPending
-              ? 'Validating...'
-              : currentCampaign
-                ? `Validate Leads (${currentCampaign.name.length > 18 ? currentCampaign.name.slice(0, 18) + '...' : currentCampaign.name})`
-                : 'Validate Leads'}
+            {validateMutation.isPending ? 'Validating...' : 'Validate Leads'}
           </button>
 
           {/* Generate Drafts Button */}
@@ -371,11 +367,7 @@ export function LeadsPage() {
             ) : (
               <Sparkles className="w-3.5 h-3.5" />
             )}
-            {personalizeMutation.isPending
-              ? 'Generating Drafts...'
-              : currentCampaign
-                ? `Generate Drafts (${currentCampaign.name.length > 18 ? currentCampaign.name.slice(0, 18) + '...' : currentCampaign.name})`
-                : 'Generate Drafts'}
+            {personalizeMutation.isPending ? 'Generating Drafts...' : 'Generate Drafts'}
           </button>
 
           <button
