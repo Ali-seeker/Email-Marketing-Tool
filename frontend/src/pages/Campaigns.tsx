@@ -435,9 +435,12 @@ function CampaignScheduleViewer({
       {/* Header & Step filter tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-semibold text-foreground flex items-center gap-1 mr-2">
+          <span className="text-xs font-semibold text-foreground flex items-center gap-1 mr-1">
             <Clock className="w-3.5 h-3.5 text-indigo-500" />
-            "{campaignName}" Dispatches ({items.length}):
+            "{campaignName}" Scheduled Emails ({items.length}):
+          </span>
+          <span className="text-[11px] text-muted-foreground mr-2 hidden md:inline">
+            (4-step emails scheduled across enrolled leads)
           </span>
           <button
             type="button"
@@ -448,7 +451,7 @@ function CampaignScheduleViewer({
                 : 'bg-card text-muted-foreground hover:text-foreground border border-border'
             }`}
           >
-            All ({items.length})
+            All Emails ({items.length})
           </button>
           <button
             type="button"
