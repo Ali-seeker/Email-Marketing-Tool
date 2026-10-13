@@ -139,10 +139,15 @@ export const api = {
       request<PaginatedResult<Lead>>(`/api/v1/leads${buildQuery(params)}`),
     get: (id: number) =>
       request<LeadTimeline>(`/api/v1/leads/${id}`),
-    uploadCsv: (file: File, campaignName: string) => {
+    uploadCsv: (file: File, campaignName?: string, campaignId?: number) => {
       const form = new FormData()
       form.append('file', file)
-      form.append('campaign_name', campaignName)
+      if (campaignId) {
+        form.append('campaign_id', String(campaignId))
+      }
+      if (campaignName) {
+        form.append('campaign_name', campaignName)
+      }
       return request<ImportReport>('/api/v1/leads/upload', {
         method: 'POST',
         body: form,

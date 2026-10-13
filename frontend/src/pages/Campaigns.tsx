@@ -16,6 +16,7 @@ import {
   Users,
   ChevronDown,
   ChevronUp,
+  Upload,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import type { Campaign, PlannedEmailItem, CampaignScheduleItem } from '@/api/types'
@@ -275,6 +276,15 @@ export function CampaignsPage() {
                       >
                         <Users className="w-3.5 h-3.5 text-muted-foreground" />
                         View Leads ({camp.leads_count ?? 0})
+                      </Link>
+
+                      <Link
+                        to={`/leads?campaign=${camp.id}&openUpload=1`}
+                        className="px-2.5 py-1.5 text-xs font-semibold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Add or import more leads directly into this campaign"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        Add Leads
                       </Link>
 
                       <button

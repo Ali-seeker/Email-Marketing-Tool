@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -65,8 +65,25 @@ export function LeadsPage() {
   // CSV Upload Dialog State
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadCampaign, setUploadCampaign] = useState(currentCampaign?.name || 'B2B DevTools Founders Outreach')
+  const [uploadCampaignMode, setUploadCampaignMode] = useState<'existing' | 'new'>('existing')
+  const [uploadCampaignId, setUploadCampaignId] = useState<number | null>(campaignIdParam || null)
+  const [uploadCampaign, setUploadCampaign] = useState(currentCampaign?.name || '')
   const [uploadReport, setUploadReport] = useState<ImportReport | null>(null)
+
+  // Auto-open upload dialog if ?openUpload=1 is passed from Campaigns page
+  useEffect(() => {
+    if (searchParams.get('openUpload') === '1') {
+      setIsUploadOpen(true)
+      if (campaignIdParam) {
+        setUploadCampaignId(campaignIdParam)
+        setUploadCampaignMode('existing')
+        const matched = campaignsData?.items?.find((c) => c.id === campaignIdParam)
+        if (matched) setUploadCampaign(matched.name)
+      }
+      searchParams.delete('openUpload')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, campaignIdParam, campaignsData])
 
   // 1. Fetch Leads Table Data (Filtered by campaignIdParam if set)
   const { data: leadsData, isLoading } = useQuery({
@@ -147,11 +164,12 @@ export function LeadsPage() {
 
   // CSV Upload Mutation
   const uploadMutation = useMutation({
-    mutationFn: ({ file, campaign }: { file: File; campaign: string }) =>
-      api.leads.uploadCsv(file, campaign),
+    mutationFn: ({ file, campaign, campaignId }: { file: File; campaign?: string; campaignId?: number }) =>
+      api.leads.uploadCsv(file, campaign, campaignId),
     onSuccess: (report) => {
       setUploadReport(report)
       queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast({
         title: 'CSV Import Completed',
         message: `Imported ${report.imported} leads, ${report.duplicates} duplicates, ${report.rejected} rejected`,
@@ -375,7 +393,17 @@ export function LeadsPage() {
             onClick={() => {
               setUploadReport(null)
               setUploadFile(null)
-              if (currentCampaign) setUploadCampaign(currentCampaign.name)
+              if (currentCampaign) {
+                setUploadCampaign(currentCampaign.name)
+                setUploadCampaignId(currentCampaign.id)
+                setUploadCampaignMode('existing')
+              } else if (campaignsData?.items?.length) {
+                setUploadCampaign(campaignsData.items[0].name)
+                setUploadCampaignId(campaignsData.items[0].id)
+                setUploadCampaignMode('existing')
+              } else {
+                setUploadCampaignMode('new')
+              }
               setIsUploadOpen(true)
             }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs transition-colors cursor-pointer"
@@ -869,16 +897,68 @@ export function LeadsPage() {
 
             {!uploadReport ? (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-muted-foreground mb-1">
-                    Target Campaign Name
-                  </label>
-                  <input
-                    type="text"
-                    value={uploadCampaign}
-                    onChange={(e) => setUploadCampaign(e.target.value)}
-                    className="w-full h-8 px-3 text-xs bg-muted/40 border border-border rounded-md"
-                  />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">
+                      Target Campaign
+                    </label>
+                    <span className="text-[11px] font-medium text-primary">
+                      {uploadCampaignMode === 'existing' ? 'Appending to Existing Campaign' : 'Creating New Campaign'}
+                    </span>
+                  </div>
+
+                  <select
+                    value={uploadCampaignMode === 'new' ? '__NEW__' : (uploadCampaignId ? String(uploadCampaignId) : '')}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === '__NEW__') {
+                        setUploadCampaignMode('new')
+                        setUploadCampaign('')
+                        setUploadCampaignId(null)
+                      } else {
+                        setUploadCampaignMode('existing')
+                        const selectedId = Number(val)
+                        const selected = campaignsData?.items?.find((c) => c.id === selectedId)
+                        if (selected) {
+                          setUploadCampaign(selected.name)
+                          setUploadCampaignId(selected.id)
+                        }
+                      }
+                    }}
+                    className="w-full h-9 px-3 text-xs bg-muted/30 border border-border rounded-md text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary font-medium"
+                  >
+                    <optgroup label="Select Existing Campaign">
+                      {campaignsData?.items?.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} (ID #{c.id} • {c.leads_count ?? 0} total leads)
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="__NEW__">➕ Create New Campaign...</option>
+                  </select>
+
+                  {uploadCampaignMode === 'new' && (
+                    <input
+                      type="text"
+                      placeholder="Type new campaign name..."
+                      value={uploadCampaign}
+                      onChange={(e) => setUploadCampaign(e.target.value)}
+                      className="w-full h-9 px-3 text-xs bg-muted/40 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                      autoFocus
+                    />
+                  )}
+
+                  <div className="p-2.5 rounded-md bg-muted/30 border border-border/60 text-[11px] text-muted-foreground leading-relaxed">
+                    {uploadCampaignMode === 'existing' ? (
+                      <span>
+                        🎯 <strong>Existing Campaign:</strong> Nayi leads seedha is campaign me add ho jayengi. Pehle se maujood emails automatically duplicate ke tor par skip ho jayengi.
+                      </span>
+                    ) : (
+                      <span>
+                        ✨ <strong>New Campaign:</strong> Diye gaye naam ke sath nayi campaign banegi aur leads usme import hon gi.
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Drag and Drop Zone */}
@@ -923,13 +1003,17 @@ export function LeadsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={!uploadFile || uploadMutation.isPending}
+                    disabled={!uploadFile || uploadMutation.isPending || (uploadCampaignMode === 'new' && !uploadCampaign.trim())}
                     onClick={() => {
                       if (uploadFile) {
-                        uploadMutation.mutate({ file: uploadFile, campaign: uploadCampaign })
+                        uploadMutation.mutate({
+                          file: uploadFile,
+                          campaign: uploadCampaign,
+                          campaignId: uploadCampaignId || undefined,
+                        })
                       }
                     }}
-                    className="px-3.5 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs disabled:opacity-50"
+                    className="px-3.5 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs disabled:opacity-50 cursor-pointer"
                   >
                     {uploadMutation.isPending ? 'Processing Import...' : 'Import Leads'}
                   </button>
