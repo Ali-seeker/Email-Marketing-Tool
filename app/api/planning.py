@@ -4,11 +4,13 @@ from datetime import UTC, date, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_clock, get_db
 from app.api.schemas import CapacityResponse, PlannedEmailItem, PlanningPreviewResponse
 from app.core.clock import Clock
+from app.models.email_message import EmailMessage, EmailMessageStatus
 from app.models.lead import Lead
 from app.services.planner import daily_capacity, due_emails, get_mailbox_tz
 from app.services.safety import is_cap_halved_from_resume
@@ -39,24 +41,49 @@ def preview_plan(
 
     rem_cap = daily_capacity(parsed_date, db=db)
 
-    # Fetch candidate emails that are due
-    candidates = due_emails(now=clk_now, db=db)
-    selected = candidates[:rem_cap]
+    # 1. Fetch currently scheduled emails (already slotted in delivery windows)
+    scheduled_msgs = db.scalars(
+        select(EmailMessage)
+        .where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
+        .order_by(EmailMessage.scheduled_at.asc(), EmailMessage.id.asc())
+    ).all()
 
     planned_items: list[PlannedEmailItem] = []
-    for msg in selected:
+    seen_ids: set[int] = set()
+
+    for msg in scheduled_msgs:
         lead = msg.lead or db.get(Lead, msg.lead_id)
         if lead:
-            item = PlannedEmailItem(
-                email_id=msg.id,
-                lead_id=lead.id,
-                email=lead.email,
-                company=lead.company,
-                step=msg.step,
-                subject=msg.subject,
-                scheduled_at=msg.scheduled_at,
+            seen_ids.add(msg.id)
+            planned_items.append(
+                PlannedEmailItem(
+                    email_id=msg.id,
+                    lead_id=lead.id,
+                    email=lead.email,
+                    company=lead.company,
+                    step=msg.step,
+                    subject=msg.subject,
+                    scheduled_at=msg.scheduled_at,
+                )
             )
-            planned_items.append(item)
+
+    # 2. Add candidates that are approved and due
+    candidates = due_emails(now=clk_now, db=db)
+    for msg in candidates[:rem_cap]:
+        if msg.id not in seen_ids:
+            lead = msg.lead or db.get(Lead, msg.lead_id)
+            if lead:
+                planned_items.append(
+                    PlannedEmailItem(
+                        email_id=msg.id,
+                        lead_id=lead.id,
+                        email=lead.email,
+                        company=lead.company,
+                        step=msg.step,
+                        subject=msg.subject,
+                        scheduled_at=msg.scheduled_at,
+                    )
+                )
 
     return PlanningPreviewResponse(
         target_date=parsed_date.isoformat(),

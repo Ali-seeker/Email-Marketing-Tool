@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Send,
@@ -11,6 +12,7 @@ import {
   Loader2,
   RefreshCw,
   MailCheck,
+  Users,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import type { Campaign, PlannedEmailItem } from '@/api/types'
@@ -237,6 +239,15 @@ export function CampaignsPage() {
 
                     {/* Campaign Action Buttons */}
                     <div className="flex items-center gap-2">
+                      <Link
+                        to="/leads"
+                        className="px-2.5 py-1.5 text-xs font-semibold bg-muted hover:bg-muted/80 text-foreground border border-border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="View and filter all leads in this campaign"
+                      >
+                        <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                        View Leads ({camp.leads_count ?? 0})
+                      </Link>
+
                       <button
                         type="button"
                         disabled={enrollMutation.isPending}
