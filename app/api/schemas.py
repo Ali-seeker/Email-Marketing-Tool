@@ -83,6 +83,7 @@ class LeadEmailSummary(BaseModel):
     id: int
     step: int
     subject: str
+    body: str | None = None
     status: str
     scheduled_at: datetime | None = None
     sent_at: datetime | None = None

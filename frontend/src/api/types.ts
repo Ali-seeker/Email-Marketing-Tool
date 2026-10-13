@@ -9,7 +9,7 @@ export type CampaignUpdate = Schemas['CampaignUpdate']
 export type Lead = Schemas['LeadResponse']
 export type LeadTimeline = Schemas['LeadDetailResponse']
 export type LeadTimelineEvent = Schemas['LeadTimelineEvent']
-export type LeadTimelineEmail = Schemas['LeadEmailSummary']
+export type LeadTimelineEmail = Schemas['LeadEmailSummary'] & { body?: string | null }
 export type LeadTimelineReply = Schemas['LeadReplySummary']
 
 export interface RejectItem {

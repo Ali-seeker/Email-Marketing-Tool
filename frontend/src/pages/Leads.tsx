@@ -642,20 +642,31 @@ export function LeadsPage() {
                   {leadTimeline.emails.map((msg: LeadTimelineEmail) => (
                     <div key={msg.id} className="p-3 bg-card rounded-md border border-border space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-foreground">
-                          Step {msg.step}: {msg.subject}
+                        <span className="font-semibold text-foreground flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px]">
+                            Step {msg.step}
+                          </span>
+                          {msg.subject}
                         </span>
                         <span className="text-[10px] text-muted-foreground tabular-nums">
-                          {msg.sent_at ? new Date(msg.sent_at).toLocaleDateString() : 'Draft'}
+                          {msg.sent_at ? new Date(msg.sent_at).toLocaleDateString() : msg.status.toUpperCase()}
                         </span>
                       </div>
+                      {msg.body && (
+                        <div className="text-[11px] text-foreground bg-muted/30 p-2.5 rounded-md whitespace-pre-wrap font-sans leading-relaxed border border-border/60">
+                          {msg.body}
+                        </div>
+                      )}
                       {msg.error ? (
                         <div className="text-[11px] text-danger font-mono bg-danger/10 p-2 rounded-md">
                           Error: {msg.error}
                         </div>
                       ) : (
-                        <div className="text-[11px] text-muted-foreground bg-muted/40 p-2 rounded-md italic">
-                          Status: {msg.status}
+                        <div className="text-[10px] text-muted-foreground italic flex items-center justify-between">
+                          <span>Status: {msg.status}</span>
+                          {msg.scheduled_at && (
+                            <span className="tabular-nums">Scheduled: {new Date(msg.scheduled_at).toLocaleString()}</span>
+                          )}
                         </div>
                       )}
                     </div>
