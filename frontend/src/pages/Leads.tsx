@@ -17,6 +17,8 @@ import {
   Sparkles,
   ShieldCheck,
   Loader2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import type {
@@ -48,6 +50,7 @@ export function LeadsPage() {
   // Drawer & Selection
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null)
   const [selectedLeads, setSelectedLeads] = useState<Lead[]>([])
+  const [expandedStepIds, setExpandedStepIds] = useState<Record<number, boolean>>({})
 
   // CSV Upload Dialog State
   const [isUploadOpen, setIsUploadOpen] = useState(false)
@@ -635,42 +638,104 @@ export function LeadsPage() {
             {/* Outreach Emails Rendered */}
             {leadTimeline.emails && leadTimeline.emails.length > 0 && (
               <div className="space-y-2">
-                <h4 className="font-bold text-foreground flex items-center gap-1.5 uppercase text-[11px] tracking-wider text-muted-foreground">
-                  <Send className="w-3.5 h-3.5" /> Dispatched Emails ({leadTimeline.emails.length})
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-foreground flex items-center gap-1.5 uppercase text-[11px] tracking-wider text-muted-foreground">
+                    <Send className="w-3.5 h-3.5" /> Dispatched Emails ({leadTimeline.emails.length})
+                  </h4>
+                  <span className="text-[10px] text-muted-foreground italic">Click step to view body</span>
+                </div>
                 <div className="space-y-2.5">
-                  {leadTimeline.emails.map((msg: LeadTimelineEmail) => (
-                    <div key={msg.id} className="p-3 bg-card rounded-md border border-border space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-foreground flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px]">
-                            Step {msg.step}
+                  {leadTimeline.emails.map((msg: LeadTimelineEmail) => {
+                    const isExpanded = expandedStepIds[msg.id] ?? (msg.step === 1)
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`rounded-md border transition-all ${
+                          isExpanded
+                            ? 'bg-card border-indigo-500/40 shadow-sm'
+                            : 'bg-card/70 border-border hover:border-border/80'
+                        }`}
+                      >
+                        {/* Clickable Header */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedStepIds((prev) => ({
+                              ...prev,
+                              [msg.id]: !isExpanded,
+                            }))
+                          }
+                          className="w-full p-3 text-left flex items-center justify-between gap-2 transition-colors hover:bg-muted/30 rounded-md"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="px-1.5 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-semibold font-mono shrink-0">
+                              Step {msg.step}
+                            </span>
+                            <span className="font-semibold text-foreground text-xs truncate">
+                              {msg.subject}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium uppercase ${
+                                msg.status === 'scheduled'
+                                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                  : msg.status === 'sent'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    : 'bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {msg.sent_at
+                                ? new Date(msg.sent_at).toLocaleDateString()
+                                : msg.status}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Metadata Row */}
+                        <div className="px-3 pb-2 text-[10px] text-muted-foreground flex items-center justify-between border-b border-border/40">
+                          <span className="capitalize">
+                            Status: <strong className="font-medium text-foreground">{msg.status}</strong>
                           </span>
-                          {msg.subject}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">
-                          {msg.sent_at ? new Date(msg.sent_at).toLocaleDateString() : msg.status.toUpperCase()}
-                        </span>
-                      </div>
-                      {msg.body && (
-                        <div className="text-[11px] text-foreground bg-muted/30 p-2.5 rounded-md whitespace-pre-wrap font-sans leading-relaxed border border-border/60">
-                          {msg.body}
-                        </div>
-                      )}
-                      {msg.error ? (
-                        <div className="text-[11px] text-danger font-mono bg-danger/10 p-2 rounded-md">
-                          Error: {msg.error}
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-muted-foreground italic flex items-center justify-between">
-                          <span>Status: {msg.status}</span>
                           {msg.scheduled_at && (
-                            <span className="tabular-nums">Scheduled: {new Date(msg.scheduled_at).toLocaleString()}</span>
+                            <span className="tabular-nums">
+                              Scheduled: {new Date(msg.scheduled_at).toLocaleString()}
+                            </span>
                           )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {/* Expandable Email Body */}
+                        {isExpanded && (
+                          <div className="p-3 bg-muted/20 space-y-2 border-t border-border/40">
+                            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+                              <span className="font-medium">Rendered Email Content:</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {msg.step === 1 ? 'Initial Hook Email' : `Follow-up Step ${msg.step}`}
+                              </span>
+                            </div>
+                            <div className="text-xs text-foreground bg-card p-3 rounded-md border border-border whitespace-pre-wrap font-sans leading-relaxed select-text shadow-inner">
+                              {msg.body || (
+                                <span className="text-muted-foreground italic">
+                                  No email body generated yet.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {msg.error && (
+                          <div className="p-2.5 text-[11px] text-danger font-mono bg-danger/10 border-t border-danger/20">
+                            Error: {msg.error}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
