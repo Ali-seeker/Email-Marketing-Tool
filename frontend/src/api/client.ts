@@ -335,6 +335,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    trip: (reason?: string) =>
+      request<{ status: string; message: string; reason: string }>('/api/v1/safety/killswitch', {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || 'Manually engaged from Safety dashboard' }),
+      }),
   },
 
   // Settings

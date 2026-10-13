@@ -14,6 +14,7 @@ from app.services.safety import (
     calculate_health_metrics,
     evaluate_safety_rules,
     is_killswitch_active,
+    trigger_killswitch,
 )
 from app.services.safety import (
     resume_killswitch as service_resume_killswitch,
@@ -116,3 +117,18 @@ def resume_killswitch(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.post("/killswitch")
+def engage_killswitch(
+    reason: str = "Manually triggered emergency killswitch by operator",
+    db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
+) -> dict[str, object]:
+    """Manually trip emergency kill-switch to halt all outbound sending."""
+    trigger_killswitch(reason=reason, db=db, clock=clock)
+    return {
+        "status": "engaged",
+        "message": "Emergency kill-switch active. All outbound worker sending halted immediately.",
+        "reason": reason,
+    }
