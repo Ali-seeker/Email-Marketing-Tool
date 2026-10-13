@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { NavLink, Link, useNavigate } from 'react-router-dom'
+import React, { useEffect } from 'react'
+import { NavLink, Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard,
@@ -28,6 +28,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
 
   // 1. Fetch Safety Status
   const { data: safetyStatus } = useQuery({
@@ -143,7 +145,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   ]
 
   const campaigns = campaignsData?.items || []
-  const [selectedCampaignId, setSelectedCampaignId] = useState<number | 'all'>('all')
+  const campaignParam = searchParams.get('campaign')
+  const selectedCampaignId = campaignParam ? Number(campaignParam) : 'all'
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
@@ -276,8 +279,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   id="campaign-switcher"
                   value={selectedCampaignId}
                   onChange={(e) => {
-                    const val = e.target.value === 'all' ? 'all' : Number(e.target.value)
-                    setSelectedCampaignId(val)
+                    const val = e.target.value
+                    const nextParams = new URLSearchParams(searchParams)
+                    if (val === 'all') {
+                      nextParams.delete('campaign')
+                    } else {
+                      nextParams.set('campaign', val)
+                    }
+                    if (location.pathname !== '/leads' && location.pathname !== '/campaigns') {
+                      navigate(`/leads?${nextParams.toString()}`)
+                    } else {
+                      setSearchParams(nextParams)
+                    }
                   }}
                   className="h-8 pl-3 pr-8 text-xs font-medium bg-muted/60 hover:bg-muted border border-border rounded-md appearance-none focus:outline-hidden focus:ring-1 focus:ring-primary cursor-pointer truncate max-w-[200px] lg:max-w-[280px]"
                 >

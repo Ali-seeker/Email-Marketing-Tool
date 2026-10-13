@@ -2,6 +2,7 @@ import type {
   Campaign,
   CampaignCreate,
   CampaignUpdate,
+  CampaignScheduleItem,
   Lead,
   LeadTimeline,
   ImportReport,
@@ -118,6 +119,8 @@ export const api = {
       request<Campaign>(`/api/v1/campaigns/${id}/resume`, { method: 'POST' }),
     activate: (id: number) =>
       request<Campaign>(`/api/v1/campaigns/${id}/activate`, { method: 'POST' }),
+    schedule: (id: number) =>
+      request<CampaignScheduleItem[]>(`/api/v1/campaigns/${id}/schedule`),
   },
 
   // Leads Endpoints

@@ -45,6 +45,19 @@ export type EmailMessage = Schemas['EmailMessageResponse']
 export type OutboxEmail = Schemas['OutboxEmailResponse']
 export type Reply = Schemas['ReplyResponse']
 
+export interface CampaignScheduleItem {
+  id: number
+  lead_id: number
+  email: string
+  company: string | null
+  step: number
+  subject: string
+  status: string
+  scheduled_at: string | null
+  sent_at: string | null
+  error: string | null
+}
+
 export type TemplatePreviewRequest = Schemas['TemplatePreviewRequest']
 export type TemplatePreviewResponse = Schemas['TemplatePreviewResponse']
 export type SequenceYamlRequest = Schemas['SequenceYamlRequest']

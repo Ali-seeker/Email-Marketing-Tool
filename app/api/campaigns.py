@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import Pagination, get_db
 from app.api.schemas import CampaignCreate, CampaignResponse, CampaignUpdate, PaginatedResponse
 from app.models.campaign import Campaign, CampaignStatus
+from app.models.email_message import EmailMessage
 from app.models.lead import Lead, LeadStatus
 from app.services.templates import load_default_sequence
 
@@ -230,3 +231,40 @@ def activate_campaign(
 ) -> CampaignResponse:
     """Activate a draft or paused campaign."""
     return resume_campaign(campaign_id, db=db)
+
+
+@router.get("/{campaign_id}/schedule")
+def get_campaign_schedule(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+):
+    """Retrieve all email messages and their schedule/status for leads in this campaign."""
+    campaign = db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Campaign {campaign_id} not found.",
+        )
+
+    emails = db.scalars(
+        select(EmailMessage)
+        .join(Lead, Lead.id == EmailMessage.lead_id)
+        .where(Lead.campaign_id == campaign_id)
+        .order_by(EmailMessage.step.asc(), EmailMessage.id.asc())
+    ).all()
+
+    return [
+        {
+            "id": em.id,
+            "lead_id": em.lead_id,
+            "email": em.lead.email if em.lead else "",
+            "company": em.lead.company if em.lead else "",
+            "step": em.step,
+            "subject": em.subject,
+            "status": em.status,
+            "scheduled_at": em.scheduled_at,
+            "sent_at": em.sent_at,
+            "error": em.error,
+        }
+        for em in emails
+    ]

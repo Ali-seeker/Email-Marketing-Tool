@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -38,6 +39,8 @@ import { useToast } from '@/design/Toast'
 export function LeadsPage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const campaignIdParam = searchParams.get('campaign') ? Number(searchParams.get('campaign')) : undefined
 
   // State: Filters, search, pagination, drawer, modal
   const [search, setSearch] = useState('')
@@ -52,15 +55,22 @@ export function LeadsPage() {
   const [selectedLeads, setSelectedLeads] = useState<Lead[]>([])
   const [expandedStepIds, setExpandedStepIds] = useState<Record<number, boolean>>({})
 
+  // Fetch campaigns for top context & CSV defaults
+  const { data: campaignsData } = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: () => api.campaigns.list({ page_size: 50 }),
+  })
+  const currentCampaign = campaignsData?.items?.find((c) => c.id === campaignIdParam)
+
   // CSV Upload Dialog State
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadCampaign, setUploadCampaign] = useState('B2B DevTools Founders Outreach')
+  const [uploadCampaign, setUploadCampaign] = useState(currentCampaign?.name || 'B2B DevTools Founders Outreach')
   const [uploadReport, setUploadReport] = useState<ImportReport | null>(null)
 
-  // 1. Fetch Leads Table Data
+  // 1. Fetch Leads Table Data (Filtered by campaignIdParam if set)
   const { data: leadsData, isLoading } = useQuery({
-    queryKey: ['leads', page, pageSize, search, statusFilter, riskFilter, countryFilter],
+    queryKey: ['leads', page, pageSize, search, statusFilter, riskFilter, countryFilter, campaignIdParam],
     queryFn: () =>
       api.leads.list({
         page,
@@ -69,6 +79,7 @@ export function LeadsPage() {
         status: statusFilter || undefined,
         risk_level: riskFilter || undefined,
         country: countryFilter || undefined,
+        campaign_id: campaignIdParam,
       }),
   })
 
@@ -152,15 +163,15 @@ export function LeadsPage() {
     },
   })
 
-  // Bulk Validate Mutation
+  // Bulk Validate Mutation (Scoped to campaignIdParam if active)
   const validateMutation = useMutation({
-    mutationFn: () => api.leads.bulkValidate(),
+    mutationFn: () => api.leads.bulkValidate({ campaign_id: campaignIdParam }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
       queryClient.invalidateQueries({ queryKey: ['funnel'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast({
-        title: 'Validation Complete',
+        title: currentCampaign ? `Validation Complete (${currentCampaign.name})` : 'Validation Complete',
         message: `Evaluated ${data.total_checked} leads: ${data.valid_count} valid, ${data.invalid_count} invalid, ${data.risky_count ?? 0} risky.`,
         type: 'success',
       })
@@ -170,16 +181,16 @@ export function LeadsPage() {
     },
   })
 
-  // Bulk Personalize / Generate Drafts Mutation
+  // Bulk Personalize / Generate Drafts Mutation (Scoped to campaignIdParam if active)
   const personalizeMutation = useMutation({
-    mutationFn: () => api.leads.personalize(),
+    mutationFn: () => api.leads.personalize({ campaign_id: campaignIdParam }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
       queryClient.invalidateQueries({ queryKey: ['funnel'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] })
       toast({
-        title: 'Drafts Generated',
+        title: currentCampaign ? `Drafts Generated (${currentCampaign.name})` : 'Drafts Generated',
         message: data.message,
         type: 'success',
       })
@@ -325,14 +336,22 @@ export function LeadsPage() {
             disabled={validateMutation.isPending}
             onClick={() => validateMutation.mutate()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs transition-colors disabled:opacity-60 cursor-pointer"
-            title="Check email syntax, disposable domains, and DNS MX records for unverified leads"
+            title={
+              currentCampaign
+                ? `Validate unverified leads in "${currentCampaign.name}"`
+                : 'Check email syntax, disposable domains, and DNS MX records for unverified leads'
+            }
           >
             {validateMutation.isPending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <ShieldCheck className="w-3.5 h-3.5" />
             )}
-            {validateMutation.isPending ? 'Validating...' : 'Validate Leads'}
+            {validateMutation.isPending
+              ? 'Validating...'
+              : currentCampaign
+                ? `Validate Leads (${currentCampaign.name.length > 18 ? currentCampaign.name.slice(0, 18) + '...' : currentCampaign.name})`
+                : 'Validate Leads'}
           </button>
 
           {/* Generate Drafts Button */}
@@ -341,14 +360,22 @@ export function LeadsPage() {
             disabled={personalizeMutation.isPending}
             onClick={() => personalizeMutation.mutate()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-xs transition-colors disabled:opacity-60 cursor-pointer"
-            title="Run AI personalization pipeline to generate opening notes and drafts"
+            title={
+              currentCampaign
+                ? `Run AI personalization specifically for leads in "${currentCampaign.name}"`
+                : 'Run AI personalization pipeline to generate opening notes and drafts'
+            }
           >
             {personalizeMutation.isPending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Sparkles className="w-3.5 h-3.5" />
             )}
-            {personalizeMutation.isPending ? 'Generating Drafts...' : 'Generate Drafts'}
+            {personalizeMutation.isPending
+              ? 'Generating Drafts...'
+              : currentCampaign
+                ? `Generate Drafts (${currentCampaign.name.length > 18 ? currentCampaign.name.slice(0, 18) + '...' : currentCampaign.name})`
+                : 'Generate Drafts'}
           </button>
 
           <button
@@ -356,6 +383,7 @@ export function LeadsPage() {
             onClick={() => {
               setUploadReport(null)
               setUploadFile(null)
+              if (currentCampaign) setUploadCampaign(currentCampaign.name)
               setIsUploadOpen(true)
             }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs transition-colors cursor-pointer"
@@ -365,6 +393,35 @@ export function LeadsPage() {
           </button>
         </div>
       </div>
+
+      {/* Active Campaign Filter Banner */}
+      {currentCampaign && (
+        <div className="flex items-center justify-between p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-xs text-indigo-700 dark:text-indigo-300">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+              Active Campaign Filter:
+            </span>
+            <span className="font-bold underline text-foreground">{currentCampaign.name}</span>
+            <span className="text-[10px] bg-indigo-500/20 px-1.5 py-0.5 rounded-sm font-mono">
+              ID #{currentCampaign.id}
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              (Table, Validation, and Draft Generation scoped strictly to this campaign)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              searchParams.delete('campaign')
+              setSearchParams(searchParams)
+            }}
+            className="px-2 py-1 text-[11px] font-semibold bg-card hover:bg-card/80 text-foreground border border-border rounded-md transition-colors cursor-pointer shrink-0"
+          >
+            ✕ Clear Filter (Show All)
+          </button>
+        </div>
+      )}
 
       {/* Workflow Step Banner */}
       {newCount > 0 && (

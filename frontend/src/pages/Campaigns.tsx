@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -13,9 +14,11 @@ import {
   RefreshCw,
   MailCheck,
   Users,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { api } from '@/api/client'
-import type { Campaign, PlannedEmailItem } from '@/api/types'
+import type { Campaign, PlannedEmailItem, CampaignScheduleItem } from '@/api/types'
 import { StatusChip } from '@/design/StatusChip'
 import { useToast } from '@/design/Toast'
 import { EmptyState, Skeleton } from '@/design/Feedback'
@@ -23,6 +26,7 @@ import { EmptyState, Skeleton } from '@/design/Feedback'
 export function CampaignsPage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [expandedScheduleCampId, setExpandedScheduleCampId] = useState<number | null>(null)
 
   // 1. Fetch Campaigns List
   const {
@@ -238,9 +242,34 @@ export function CampaignsPage() {
                     </div>
 
                     {/* Campaign Action Buttons */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedScheduleCampId(
+                            expandedScheduleCampId === camp.id ? null : camp.id
+                          )
+                        }
+                        className={`px-2.5 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                          expandedScheduleCampId === camp.id
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                            : 'bg-card hover:bg-muted text-foreground border-border'
+                        }`}
+                        title="View scheduled dispatches and steps table for this campaign"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        {expandedScheduleCampId === camp.id
+                          ? 'Hide Schedule'
+                          : `Schedule & Steps (${camp.active_leads_count ?? 0})`}
+                        {expandedScheduleCampId === camp.id ? (
+                          <ChevronUp className="w-3 h-3" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3" />
+                        )}
+                      </button>
+
                       <Link
-                        to="/leads"
+                        to={`/leads?campaign=${camp.id}`}
                         className="px-2.5 py-1.5 text-xs font-semibold bg-muted hover:bg-muted/80 text-foreground border border-border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
                         title="View and filter all leads in this campaign"
                       >
@@ -309,6 +338,11 @@ export function CampaignsPage() {
                       <div className="text-[11px] text-muted-foreground mt-0.5">+7 days (Graceful exit)</div>
                     </div>
                   </div>
+
+                  {/* Inline Campaign Schedule Viewer */}
+                  {expandedScheduleCampId === camp.id && (
+                    <CampaignScheduleViewer campaignId={camp.id} campaignName={camp.name} />
+                  )}
                 </div>
               )
             })}
@@ -377,3 +411,167 @@ export function CampaignsPage() {
     </div>
   )
 }
+
+function CampaignScheduleViewer({
+  campaignId,
+  campaignName,
+}: {
+  campaignId: number
+  campaignName: string
+}) {
+  const [stepFilter, setStepFilter] = useState<number | 'all'>('all')
+
+  const { data: scheduleItems, isLoading } = useQuery({
+    queryKey: ['campaignSchedule', campaignId],
+    queryFn: () => api.campaigns.schedule(campaignId),
+  })
+
+  const items: CampaignScheduleItem[] = scheduleItems || []
+  const filtered = stepFilter === 'all' ? items : items.filter((i) => i.step === stepFilter)
+
+  const step1Count = items.filter((i) => i.step === 1).length
+  const step2Count = items.filter((i) => i.step === 2).length
+  const step3Count = items.filter((i) => i.step === 3).length
+  const step4Count = items.filter((i) => i.step === 4).length
+
+  if (isLoading) {
+    return <Skeleton className="h-32 w-full rounded-md mt-2" />
+  }
+
+  return (
+    <div className="mt-3 p-3 bg-muted/20 border border-indigo-500/30 rounded-md space-y-3 animate-in fade-in-50 duration-200">
+      {/* Header & Step filter tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-semibold text-foreground flex items-center gap-1 mr-2">
+            <Clock className="w-3.5 h-3.5 text-indigo-500" />
+            "{campaignName}" Dispatches ({items.length}):
+          </span>
+          <button
+            type="button"
+            onClick={() => setStepFilter('all')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              stepFilter === 'all'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+            }`}
+          >
+            All ({items.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStepFilter(1)}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              stepFilter === 1
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+            }`}
+          >
+            Step 1 Hook ({step1Count})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStepFilter(2)}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              stepFilter === 2
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+            }`}
+          >
+            Step 2 (+3d) ({step2Count})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStepFilter(3)}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              stepFilter === 3
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+            }`}
+          >
+            Step 3 (+4d) ({step3Count})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStepFilter(4)}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              stepFilter === 4
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+            }`}
+          >
+            Step 4 Breakup ({step4Count})
+          </button>
+        </div>
+
+        <Link
+          to={`/leads?campaign=${campaignId}`}
+          className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 shrink-0"
+        >
+          Open in Leads Table →
+        </Link>
+      </div>
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-4 text-xs text-muted-foreground italic">
+          No dispatches or leads enrolled in this step yet. Click "Enroll Leads" above.
+        </div>
+      ) : (
+        <div className="border border-border/80 rounded-md overflow-hidden bg-card text-xs max-h-72 overflow-y-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 bg-muted/90 backdrop-blur-xs z-10 border-b border-border text-[11px]">
+              <tr className="text-muted-foreground">
+                <th className="p-2 font-semibold">Recipient</th>
+                <th className="p-2 font-semibold">Company</th>
+                <th className="p-2 font-semibold">Step</th>
+                <th className="p-2 font-semibold">Subject</th>
+                <th className="p-2 font-semibold">Status</th>
+                <th className="p-2 font-semibold">Scheduled / Sent Slot</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {filtered.map((item) => (
+                <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="p-2 font-semibold text-foreground">{item.email}</td>
+                  <td className="p-2 text-muted-foreground">{item.company || '—'}</td>
+                  <td className="p-2">
+                    <span className="px-1.5 py-0.5 rounded-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-mono text-[10px]">
+                      Step {item.step}
+                    </span>
+                  </td>
+                  <td className="p-2 text-foreground max-w-xs truncate" title={item.subject}>
+                    {item.subject}
+                  </td>
+                  <td className="p-2">
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium uppercase ${
+                        item.status === 'scheduled'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                          : item.status === 'sent'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          : item.status === 'needs_review'
+                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                  </td>
+                  <td className="p-2 text-[11px] text-muted-foreground font-mono tabular-nums">
+                    {item.scheduled_at
+                      ? new Date(item.scheduled_at).toLocaleString()
+                      : item.sent_at
+                      ? new Date(item.sent_at).toLocaleString()
+                      : 'Draft / Pending'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
