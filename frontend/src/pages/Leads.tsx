@@ -15,6 +15,8 @@ import {
   Send,
   Clock,
   Sparkles,
+  ShieldCheck,
+  Loader2,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import type {
@@ -147,6 +149,44 @@ export function LeadsPage() {
     },
   })
 
+  // Bulk Validate Mutation
+  const validateMutation = useMutation({
+    mutationFn: () => api.leads.bulkValidate(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['funnel'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      toast({
+        title: 'Validation Complete',
+        message: `Evaluated ${data.total_checked} leads: ${data.valid_count} valid, ${data.invalid_count} invalid, ${data.risky_count ?? 0} risky.`,
+        type: 'success',
+      })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Validation Failed', message: err.message, type: 'error' })
+    },
+  })
+
+  // Bulk Personalize / Generate Drafts Mutation
+  const personalizeMutation = useMutation({
+    mutationFn: () => api.leads.personalize(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['funnel'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] })
+      toast({
+        title: 'Drafts Generated',
+        message: data.message,
+        type: 'success',
+      })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Draft Generation Failed', message: err.message, type: 'error' })
+    },
+  })
+
+
   // Table Columns
   const columns = React.useMemo<ColumnDef<Lead, any>[]>(
     () => [
@@ -237,6 +277,8 @@ export function LeadsPage() {
   }
 
   const leads = leadsData?.items || []
+  const newCount = leads.filter((ld) => ld.status === 'new').length
+  const validCount = leads.filter((ld) => ld.status === 'valid').length
 
   return (
     <div className="space-y-4">
@@ -245,10 +287,10 @@ export function LeadsPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground">Leads Management</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Filter, inspect account timelines, and perform manual sequence actions.
+            Filter, inspect account timelines, validate emails, and generate drafts directly from the dashboard.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {selectedLeads.length > 0 && (
             <div className="flex items-center gap-1.5 mr-2">
               <button
@@ -273,6 +315,39 @@ export function LeadsPage() {
               </button>
             </div>
           )}
+
+          {/* Validate Leads Button */}
+          <button
+            type="button"
+            disabled={validateMutation.isPending}
+            onClick={() => validateMutation.mutate()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs transition-colors disabled:opacity-60 cursor-pointer"
+            title="Check email syntax, disposable domains, and DNS MX records for unverified leads"
+          >
+            {validateMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ShieldCheck className="w-3.5 h-3.5" />
+            )}
+            {validateMutation.isPending ? 'Validating...' : 'Validate Leads'}
+          </button>
+
+          {/* Generate Drafts Button */}
+          <button
+            type="button"
+            disabled={personalizeMutation.isPending}
+            onClick={() => personalizeMutation.mutate()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-xs transition-colors disabled:opacity-60 cursor-pointer"
+            title="Run AI personalization pipeline to generate opening notes and drafts"
+          >
+            {personalizeMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5" />
+            )}
+            {personalizeMutation.isPending ? 'Generating Drafts...' : 'Generate Drafts'}
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -280,13 +355,53 @@ export function LeadsPage() {
               setUploadFile(null)
               setIsUploadOpen(true)
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs transition-colors cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" aria-hidden="true" />
             Upload CSV
           </button>
         </div>
       </div>
+
+      {/* Workflow Step Banner */}
+      {newCount > 0 && (
+        <div className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-400">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>Step 1:</strong> You have <strong>{newCount} unverified (New) leads</strong>. Click <strong>Validate Leads</strong> to verify email syntax, disposable checks, and DNS MX records.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => validateMutation.mutate()}
+            disabled={validateMutation.isPending}
+            className="ml-3 px-2.5 py-1 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-md shrink-0 cursor-pointer"
+          >
+            {validateMutation.isPending ? 'Validating...' : 'Validate Now'}
+          </button>
+        </div>
+      )}
+
+      {newCount === 0 && validCount > 0 && (
+        <div className="flex items-center justify-between p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs text-indigo-700 dark:text-indigo-400">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>Step 2:</strong> You have <strong>{validCount} Valid leads</strong> ready for outreach. Click <strong>Generate Drafts</strong> to create personalized observations and send them to the Approval Queue.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => personalizeMutation.mutate()}
+            disabled={personalizeMutation.isPending}
+            className="ml-3 px-2.5 py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shrink-0 cursor-pointer"
+          >
+            {personalizeMutation.isPending ? 'Generating...' : 'Generate Drafts'}
+          </button>
+        </div>
+      )}
+
 
       {/* Filter Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 bg-card p-3 rounded-lg border border-border text-xs">

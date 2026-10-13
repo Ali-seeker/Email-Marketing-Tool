@@ -69,6 +69,8 @@ class LeadResponse(BaseModel):
 
 
 class LeadTimelineEvent(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     type: str
     payload: dict[str, Any] | None = None
@@ -76,6 +78,8 @@ class LeadTimelineEvent(BaseModel):
 
 
 class LeadEmailSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     step: int
     subject: str
@@ -86,6 +90,8 @@ class LeadEmailSummary(BaseModel):
 
 
 class LeadReplySummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     from_email: str
     subject: str
@@ -107,6 +113,14 @@ class LeadBulkValidateResponse(BaseModel):
     valid_count: int
     invalid_count: int
     risky_count: int
+
+
+class PersonalizeResponse(BaseModel):
+    total: int
+    personalized: int
+    preserved: int
+    needs_manual_note: int
+    message: str
 
 
 # =============================================================================

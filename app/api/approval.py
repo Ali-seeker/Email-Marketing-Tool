@@ -129,8 +129,17 @@ def regenerate_draft(
     clock: Clock = Depends(get_clock),
 ) -> LeadResponse:
     """Trigger AI re-generation of personalization for lead."""
+    from app.core.config import get_settings
+    from app.services.fetcher import RealFetcher
+    from app.services.llm import get_llm_client
+
+    settings = get_settings()
+    fetcher = RealFetcher(settings=settings)
+    llm = get_llm_client(settings=settings)
+
     try:
-        lead = regenerate(lead_id, db=db, clock=clock)
+        lead = regenerate(lead_id, db=db, fetcher=fetcher, llm=llm, clock=clock)
         return LeadResponse.model_validate(lead)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+

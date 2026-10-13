@@ -15,6 +15,7 @@ from app.api.schemas import (
     LeadResponse,
     LeadTimelineEvent,
     PaginatedResponse,
+    PersonalizeResponse,
 )
 from app.core.clock import Clock
 from app.models.campaign import Campaign
@@ -432,9 +433,12 @@ def skip_current_step(
     return LeadResponse.model_validate(lead)
 
 
+@router.post("/bulk-validate", response_model=LeadBulkValidateResponse)
 @router.post("/validate", response_model=LeadBulkValidateResponse)
 def bulk_validate_leads(
+    campaign_id: Annotated[int | None, Query()] = None,
     campaign_name: Annotated[str | None, Query()] = None,
+    allow_risky: Annotated[bool | None, Query()] = None,
     db: Session = Depends(get_db),
     clock: Clock = Depends(get_clock),
 ) -> LeadBulkValidateResponse:
@@ -442,6 +446,8 @@ def bulk_validate_leads(
     summary = validate_leads(
         db=db,
         campaign_name=campaign_name,
+        campaign_id=campaign_id,
+        allow_risky=allow_risky,
         clock=clock,
     )
     return LeadBulkValidateResponse(
@@ -450,3 +456,70 @@ def bulk_validate_leads(
         invalid_count=summary.invalid_count,
         risky_count=summary.risk_risky,
     )
+
+
+@router.post("/personalize", response_model=PersonalizeResponse)
+def bulk_personalize_leads(
+    campaign_id: Annotated[int | None, Query()] = None,
+    campaign_name: Annotated[str | None, Query()] = None,
+    db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
+) -> PersonalizeResponse:
+    """Run personalization pipeline across valid/new leads to generate AI draft observations."""
+    from app.core.config import get_settings
+    from app.services.fetcher import RealFetcher
+    from app.services.llm import get_llm_client
+    from app.services.personalizer import personalize_campaign
+
+    settings = get_settings()
+    fetcher = RealFetcher(settings=settings)
+    llm = get_llm_client(settings=settings)
+
+    if campaign_id is not None or campaign_name is not None:
+        target = campaign_id if campaign_id is not None else campaign_name
+        try:
+            stats = personalize_campaign(
+                campaign_name_or_id=target,  # type: ignore[arg-type]
+                db=db,
+                fetcher=fetcher,
+                llm=llm,
+                clock=clock,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    else:
+        # Process all campaigns that have eligible leads
+        campaigns = db.scalars(
+            select(Campaign).where(
+                Campaign.id.in_(
+                    select(Lead.campaign_id).where(
+                        Lead.status.in_([LeadStatus.VALID.value, LeadStatus.NEW.value])
+                    )
+                )
+            )
+        ).all()
+        stats = {"total": 0, "personalized": 0, "preserved": 0, "needs_manual_note": 0}
+        for c in campaigns:
+            c_stats = personalize_campaign(
+                campaign_name_or_id=c.id,
+                db=db,
+                fetcher=fetcher,
+                llm=llm,
+                clock=clock,
+            )
+            for k in stats:
+                stats[k] += c_stats.get(k, 0)
+
+    return PersonalizeResponse(
+        total=stats["total"],
+        personalized=stats["personalized"],
+        preserved=stats["preserved"],
+        needs_manual_note=stats["needs_manual_note"],
+        message=(
+            f"Processed {stats['total']} leads: "
+            f"{stats['personalized']} personalized, "
+            f"{stats['preserved']} preserved, "
+            f"{stats['needs_manual_note']} need manual review."
+        ),
+    )
+

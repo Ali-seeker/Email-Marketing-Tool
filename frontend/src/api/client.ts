@@ -157,11 +157,20 @@ export const api = {
       request<Lead>(`/api/v1/leads/${id}/mark-not-interested`, { method: 'POST' }),
     skipStep: (id: number) =>
       request<Lead>(`/api/v1/leads/${id}/skip-step`, { method: 'POST' }),
-    bulkValidate: (params?: { campaign_id?: number; allow_risky?: boolean }) =>
-      request<{ total_checked: number; valid_count: number; invalid_count: number }>(
+    bulkValidate: (params?: { campaign_id?: number; campaign_name?: string; allow_risky?: boolean }) =>
+      request<{ total_checked: number; valid_count: number; invalid_count: number; risky_count: number }>(
         `/api/v1/leads/bulk-validate${buildQuery(params)}`,
         { method: 'POST' }
       ),
+    personalize: (params?: { campaign_id?: number; campaign_name?: string }) =>
+      request<{
+        total: number
+        personalized: number
+        preserved: number
+        needs_manual_note: number
+        message: string
+      }>(`/api/v1/leads/personalize${buildQuery(params)}`, { method: 'POST' }),
+
   },
 
   // Approval Queue Endpoints
@@ -204,6 +213,10 @@ export const api = {
       request<PlanningPreview>(`/api/v1/planning/preview${buildQuery({ target_date: targetDate })}`),
     capacity: (checkDate?: string) =>
       request<CapacityResponse>(`/api/v1/planning/capacity${buildQuery({ check_date: checkDate })}`),
+    plan: (targetDate?: string) =>
+      request<PlanningPreview>(`/api/v1/planning/plan${buildQuery({ target_date: targetDate })}`, {
+        method: 'POST',
+      }),
   },
 
   // Outbound Emails & Outbox

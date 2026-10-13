@@ -110,3 +110,50 @@ def get_capacity(
         remaining_capacity=rem_cap,
         is_cap_halved=halved,
     )
+
+
+@router.post("/plan", response_model=PlanningPreviewResponse)
+def execute_plan(
+    target_date: Annotated[str | None, Query(description="Date in YYYY-MM-DD format")] = None,
+    db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
+) -> PlanningPreviewResponse:
+    """Execute the outbound dispatch scheduler for target date."""
+    clk_now = clock.now()
+    if clk_now.tzinfo is None:
+        clk_now = clk_now.replace(tzinfo=UTC)
+
+    mailbox_tz = get_mailbox_tz(db)
+    local_now = clk_now.astimezone(mailbox_tz)
+
+    if target_date:
+        parsed_date = date.fromisoformat(target_date.strip())
+    else:
+        parsed_date = local_now.date()
+
+    from app.services.planner import plan_day
+
+    scheduled_msgs = plan_day(target_date=parsed_date, db=db, clock=clock)
+    rem_cap = daily_capacity(parsed_date, db=db)
+
+    planned_items: list[PlannedEmailItem] = []
+    for msg in scheduled_msgs:
+        lead = msg.lead or db.get(Lead, msg.lead_id)
+        if lead:
+            item = PlannedEmailItem(
+                email_id=msg.id,
+                lead_id=lead.id,
+                email=lead.email,
+                company=lead.company,
+                step=msg.step,
+                subject=msg.subject,
+                scheduled_at=msg.scheduled_at,
+            )
+            planned_items.append(item)
+
+    return PlanningPreviewResponse(
+        target_date=parsed_date.isoformat(),
+        remaining_capacity=rem_cap,
+        planned_emails=planned_items,
+    )
+
