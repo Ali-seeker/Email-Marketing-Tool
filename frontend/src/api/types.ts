@@ -77,7 +77,12 @@ export interface BounceRateStats {
   sample_size_ok: boolean
 }
 
-export type SafetyStatus = Schemas['SafetyStatusResponse']
+export type SafetyStatus = Schemas['SafetyStatusResponse'] & {
+  hunter_quota_exceeded?: boolean
+  hunter_quota_dismissed?: boolean
+  hunter_used_credits?: number
+  hunter_monthly_quota?: number
+}
 export type SafetyAlert = Schemas['SafetyAlertItem']
 export type SafetyResumeRequest = Schemas['SafetyResumeRequest']
 

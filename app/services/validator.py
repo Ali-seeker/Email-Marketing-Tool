@@ -28,7 +28,7 @@ from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus, RiskLevel
 from app.models.setting import Setting
 from app.services.dns_resolver import DnsResolver, LiveDnsResolver
-from app.services.email_verifier import EmailVerifier, NullVerifier
+from app.services.email_verifier import EmailVerifier, NullVerifier, get_default_verifier
 
 logger = get_logger(__name__)
 
@@ -276,16 +276,7 @@ def evaluate_email(
     if not dns_cache.is_valid:
         return RiskLevel.BAD.value, f"Domain {domain} has no MX or A records"
 
-    # 5. External verifier (Hunter.io / etc.)
-    ext_result = verifier.verify(clean_email, db, clock)
-    if ext_result:
-        if ext_result.risk_level == RiskLevel.BAD.value:
-            return RiskLevel.BAD.value, f"External verifier invalid: {ext_result.status}"
-        elif ext_result.risk_level == RiskLevel.RISKY.value:
-            risk_level = RiskLevel.RISKY.value
-            reasons.append(f"External verifier flagged: {ext_result.status}")
-
-    # 6. Domain-to-website sanity check
+    # 5. Domain-to-website sanity check
     if website:
         web_domain = extract_domain_from_url(website)
         if web_domain and domain not in FREE_EMAIL_PROVIDERS:
@@ -297,6 +288,18 @@ def evaluate_email(
             ):
                 risk_level = RiskLevel.RISKY.value
                 reasons.append(f"Email domain ({domain}) does not match website ({web_domain})")
+
+    # 6. External verifier (Hunter.io / etc.)
+    # Credit-Saver Policy: Only verify with Hunter if all prior local checks pass as OK!
+    # If the lead already failed local syntax, typo, disposable, or DNS checks, do not waste an external credit.
+    if risk_level == RiskLevel.OK.value:
+        ext_result = verifier.verify(clean_email, db, clock)
+        if ext_result:
+            if ext_result.risk_level == RiskLevel.BAD.value:
+                return RiskLevel.BAD.value, f"Hunter verifier invalid: {ext_result.status}"
+            elif ext_result.risk_level == RiskLevel.RISKY.value:
+                risk_level = RiskLevel.RISKY.value
+                reasons.append(f"Hunter verifier flagged: {ext_result.status}")
 
     if risk_level == RiskLevel.OK.value:
         return RiskLevel.OK.value, "Passed all validation checks"
@@ -338,7 +341,7 @@ def validate_leads(
     """
     active_clock = clock or system_clock
     resolver = dns_resolver or LiveDnsResolver()
-    ext_verifier = verifier or NullVerifier()
+    ext_verifier = verifier or get_default_verifier(db)
 
     effective_allow_risky = (
         allow_risky if allow_risky is not None else get_effective_allow_risky(db)

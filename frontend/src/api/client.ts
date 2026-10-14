@@ -371,6 +371,10 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ reason: reason || 'Manually engaged from Safety dashboard' }),
       }),
+    dismissHunterAlert: () =>
+      request<{ status: string; message: string }>('/api/v1/safety/dismiss-hunter-alert', {
+        method: 'POST',
+      }),
   },
 
   // Settings

@@ -115,6 +115,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Hunter Quota Alert Dismissal State
+  const [isDismissingHunterAlert, setIsDismissingHunterAlert] = useState(false)
+  const [localHunterDismissed, setLocalHunterDismissed] = useState(false)
+
+  const showHunterQuotaModal = Boolean(
+    safetyStatus?.hunter_quota_exceeded &&
+    !safetyStatus?.hunter_quota_dismissed &&
+    !localHunterDismissed
+  )
+
+  const handleDismissHunterAlert = async () => {
+    try {
+      setIsDismissingHunterAlert(true)
+      await api.safety.dismissHunterAlert()
+      setLocalHunterDismissed(true)
+      await queryClient.invalidateQueries({ queryKey: ['safetyStatus'] })
+      toast({
+        title: 'Hunter.io Alert Dismissed',
+        message: 'System local fallback mode me verification jari rakhay ga.',
+        type: 'info',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Action Failed',
+        message: err.message || 'Could not update alert status',
+        type: 'error',
+      })
+    } finally {
+      setIsDismissingHunterAlert(false)
+    }
+  }
+
   // SSE Live Event Listener
   useEffect(() => {
     let eventSource: EventSource | null = null
@@ -598,6 +630,87 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ) : (
                   <>
                     <Flame className="w-3.5 h-3.5" /> Confirm & Activate LIVE
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent Hunter.io Quota Exceeded Modal */}
+      {showHunterQuotaModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="bg-card border-2 border-amber-500/40 w-full max-w-lg rounded-xl shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0 shadow-xs">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-foreground">Hunter.io API Limit Reached</h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+                    Limit Exhausted
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Monthly verification credit cap has been reached
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-muted/60 border border-border rounded-lg space-y-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Credits Status</span>
+                <p className="font-bold text-foreground text-sm">
+                  {safetyStatus?.hunter_used_credits ?? safetyStatus?.hunter_monthly_quota ?? 25} / {safetyStatus?.hunter_monthly_quota ?? 25} Used
+                </p>
+                <span className="text-[11px] text-amber-600 dark:text-amber-400">100% Consumed</span>
+              </div>
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg space-y-1">
+                <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">System State</span>
+                <p className="font-bold text-emerald-600 dark:text-emerald-400 text-sm flex items-center gap-1.5">
+                  <Activity className="w-4 h-4" /> Local Fallback Active
+                </p>
+                <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">Continuous Validation</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-muted/40 border border-border rounded-lg text-xs text-muted-foreground space-y-2 leading-relaxed">
+              <p className="text-foreground font-medium flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                Automatic Fallback Mode Active
+              </p>
+              <p>
+                Hunter.io ki monthly limit poori hone par verification ruke gi nahi. System ne automatically local engine switch kar diya hai:
+              </p>
+              <ul className="list-disc list-inside space-y-1 pl-1 text-[11px]">
+                <li>RFC 5322 Syntax & Common Typo corrections (e.g. <code className="text-foreground font-mono">@gail.com</code>)</li>
+                <li>Live MX & Null MX (RFC 7505) DNS records validation</li>
+                <li>Disposable & Temporary email address blocking</li>
+                <li>Role-based accounts & company website alignment</li>
+              </ul>
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium pt-1 border-t border-border">
+                ⚠️ Yeh notice screen par tab tak rahay ga jab tak aap khud isay dismiss na karein.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                disabled={isDismissingHunterAlert}
+                onClick={handleDismissHunterAlert}
+                className="w-full sm:w-auto px-5 py-2 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isDismissingHunterAlert ? (
+                  'Dismissing...'
+                ) : (
+                  <>
+                    <CheckSquare className="w-4 h-4" /> Samajh Gaya, Continue with Fallback
                   </>
                 )}
               </button>

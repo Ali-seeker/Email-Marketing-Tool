@@ -71,6 +71,29 @@ def get_safety_status(
         for e in alert_events
     ]
 
+    from app.models.setting import Setting
+    from app.services.email_verifier import HunterVerifier
+
+    hunter_exceeded_setting = db.scalar(
+        select(Setting.value).where(Setting.key == "HUNTER_QUOTA_EXCEEDED")
+    )
+    hunter_quota_exceeded = bool(
+        hunter_exceeded_setting
+        and hunter_exceeded_setting.strip().lower() in ("true", "1", "yes")
+    )
+
+    hunter_dismissed_setting = db.scalar(
+        select(Setting.value).where(Setting.key == "HUNTER_QUOTA_ALERT_DISMISSED")
+    )
+    hunter_quota_dismissed = bool(
+        hunter_dismissed_setting
+        and hunter_dismissed_setting.strip().lower() in ("true", "1", "yes")
+    )
+
+    hv = HunterVerifier()
+    hunter_used_credits = hv.get_used_credits(db, clock)
+    hunter_monthly_quota = hv.monthly_quota
+
     return SafetyStatusResponse(
         killswitch_active=killswitch,
         health_score=score,
@@ -84,7 +107,31 @@ def get_safety_status(
         sample_size_ok=metrics.sample_size_ok,
         reasons=reasons,
         recent_alerts=alert_items,
+        hunter_quota_exceeded=hunter_quota_exceeded,
+        hunter_quota_dismissed=hunter_quota_dismissed,
+        hunter_used_credits=hunter_used_credits,
+        hunter_monthly_quota=hunter_monthly_quota,
     )
+
+
+@router.post("/dismiss-hunter-alert")
+def dismiss_hunter_alert(
+    db: Session = Depends(get_db), clock: Clock = Depends(get_clock)
+) -> dict[str, str]:
+    """Dismiss persistent Hunter.io quota alert on operator request."""
+    from app.models.setting import Setting
+
+    now_dt = clock.now()
+    dismissed = db.scalar(
+        select(Setting).where(Setting.key == "HUNTER_QUOTA_ALERT_DISMISSED")
+    )
+    if not dismissed:
+        db.add(Setting(key="HUNTER_QUOTA_ALERT_DISMISSED", value="true", updated_at=now_dt))
+    else:
+        dismissed.value = "true"
+        dismissed.updated_at = now_dt
+    db.commit()
+    return {"status": "dismissed", "message": "Hunter quota alert dismissed by operator."}
 
 
 @router.post("/resume")

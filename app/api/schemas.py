@@ -339,6 +339,10 @@ class SafetyStatusResponse(BaseModel):
     sample_size_ok: bool
     reasons: list[str] = []
     recent_alerts: list[SafetyAlertItem] = []
+    hunter_quota_exceeded: bool = False
+    hunter_quota_dismissed: bool = False
+    hunter_used_credits: int = 0
+    hunter_monthly_quota: int = 25
 
 
 class SafetyResumeRequest(BaseModel):
