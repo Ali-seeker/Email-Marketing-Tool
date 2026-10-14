@@ -289,10 +289,19 @@ class SmtpSender(MailSender):
                 server: smtplib.SMTP = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
             else:
                 server = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
+                server.starttls()
 
             with server:
                 if self.username and self.password:
-                    server.login(self.username, self.password)
+                    clean_user = self.username.strip()
+                    clean_pwd = self.password.replace(" ", "").strip()
+                    try:
+                        server.login(clean_user, clean_pwd)
+                    except smtplib.SMTPServerDisconnected as e:
+                        raise smtplib.SMTPAuthenticationError(
+                            535,
+                            b"5.7.8 Username and Password not accepted by Gmail (BadCredentials). Please verify your 16-character Google App Password and account email.",
+                        ) from e
                 server.send_message(email_obj)
 
             logger.info("Email to %s sent successfully via SMTP (%s)", message.to_email, msg_id)

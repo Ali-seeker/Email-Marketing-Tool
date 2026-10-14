@@ -8,6 +8,11 @@ import {
   Calendar,
   RotateCcw,
   Sliders,
+  Mail,
+  Send,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import { useToast } from '@/design/Toast'
@@ -80,6 +85,30 @@ export function SettingsPage() {
         }
       }
       toast({ title: 'Update Failed', message: err.message, type: 'error' })
+    },
+  })
+
+  // Test email state & mutation
+  const [testEmail, setTestEmail] = useState('')
+  const [testStatus, setTestStatus] = useState<{ success?: boolean; message?: string } | null>(null)
+
+  const sendTestMutation = useMutation({
+    mutationFn: (email: string) => api.settings.sendTestEmail(email),
+    onSuccess: (data) => {
+      setTestStatus({ success: true, message: data.detail })
+      toast({
+        title: 'Test Email Sent!',
+        message: `Dispatched test email to ${data.recipient || testEmail}. Check your inbox!`,
+        type: 'success',
+      })
+    },
+    onError: (err: any) => {
+      setTestStatus({ success: false, message: err.message })
+      toast({
+        title: 'Delivery Failed',
+        message: err.message,
+        type: 'error',
+      })
     },
   })
 
@@ -262,7 +291,23 @@ export function SettingsPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            <div>
+              <label className="block font-semibold text-foreground mb-1">
+                Outreach Start Date
+              </label>
+              <input
+                type="text"
+                value={form.OUTREACH_START_DATE || '2026-10-01'}
+                onChange={(e) => handleFieldChange('OUTREACH_START_DATE', e.target.value)}
+                placeholder="2026-10-01"
+                className="w-full h-8 px-3 bg-muted/40 border border-border rounded-md text-foreground font-mono"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                No emails send before this date. Set to today or earlier for live dispatch.
+              </p>
+            </div>
+
             <div>
               <label className="block font-semibold text-foreground mb-1">
                 Window Start Time (Local)
@@ -274,6 +319,9 @@ export function SettingsPage() {
                 placeholder="09:00"
                 className="w-full h-8 px-3 bg-muted/40 border border-border rounded-md text-foreground font-mono"
               />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Recipient local window start.
+              </p>
             </div>
 
             <div>
@@ -287,6 +335,9 @@ export function SettingsPage() {
                 placeholder="11:30"
                 className="w-full h-8 px-3 bg-muted/40 border border-border rounded-md text-foreground font-mono"
               />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Recipient local window end.
+              </p>
             </div>
           </div>
         </div>
@@ -433,6 +484,71 @@ export function SettingsPage() {
             />
           </div>
         </div>
+      </div>
+
+      {/* 5. Live SMTP Mailbox Test */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Mail className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground">Real SMTP Mailbox Delivery Test</h2>
+          </div>
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-primary/10 text-primary">
+            Instant Test
+          </span>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Send a real verification email to your personal inbox right now to test if your SMTP host, Google App Password, and network connection are working properly.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <input
+            type="email"
+            value={testEmail}
+            onChange={(e) => setTestEmail(e.target.value)}
+            placeholder="Enter your personal recipient email (e.g. you@gmail.com)"
+            className="flex-1 h-9 px-3 bg-muted/40 border border-border rounded-md text-foreground text-xs font-mono"
+          />
+          <button
+            type="button"
+            disabled={!testEmail.trim() || sendTestMutation.isPending}
+            onClick={() => sendTestMutation.mutate(testEmail.trim())}
+            className="h-9 px-4 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-xs disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+          >
+            {sendTestMutation.isPending ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
+              </>
+            ) : (
+              <>
+                <Send className="w-3.5 h-3.5" /> Send Test Email
+              </>
+            )}
+          </button>
+        </div>
+
+        {testStatus && (
+          <div
+            className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+              testStatus.success
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                : 'bg-destructive/10 border-destructive/20 text-destructive'
+            }`}
+          >
+            {testStatus.success ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
+            )}
+            <div>
+              <p className="font-semibold">
+                {testStatus.success ? 'Delivery Confirmed!' : 'SMTP Error Encountered'}
+              </p>
+              <p className="text-[11px] opacity-90 mt-0.5 font-mono break-all">{testStatus.message}</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

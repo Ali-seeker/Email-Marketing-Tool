@@ -351,6 +351,11 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ settings, confirm }),
       }),
+    sendTestEmail: (toEmail: string) =>
+      request<{ success: boolean; detail: string; message_id?: string; recipient?: string }>('/api/v1/settings/test-email', {
+        method: 'POST',
+        body: JSON.stringify({ to_email: toEmail }),
+      }),
   },
 
   // Live Updates SSE Stream

@@ -347,8 +347,15 @@ class SafetyResumeRequest(BaseModel):
 
 
 # =============================================================================
-# Settings
-# =============================================================================
 class SettingsUpdateRequest(BaseModel):
     settings: dict[str, Any]
     confirm: bool = False
+
+
+class TestEmailRequest(BaseModel):
+    to_email: str = Field(..., description="Destination recipient email address")
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    from_email: str | None = None

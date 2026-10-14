@@ -210,14 +210,19 @@ class Worker:
 
     def poll_inbox(self, db: Session, now: datetime) -> tuple[int, dict[str, float]]:
         """Poll incoming emails, process bounces/replies, and calculate bounce rates."""
-        reader = self.get_inbox_reader()
-        new_count, stats = poll_inbox_and_process(
-            reader=reader, db=db, clock=self.clock, notifier=self.notifier
-        )
-        self._last_inbox_poll = now
-        # Recalculate health metrics and enforce safety rules after every inbox poll
-        evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
-        return new_count, stats
+        try:
+            reader = self.get_inbox_reader()
+            new_count, stats = poll_inbox_and_process(
+                reader=reader, db=db, clock=self.clock, notifier=self.notifier
+            )
+            self._last_inbox_poll = now
+            # Recalculate health metrics and enforce safety rules after every inbox poll
+            evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
+            return new_count, stats
+        except Exception as e:
+            logger.warning("Inbox polling transient failure: %s", e)
+            self._last_inbox_poll = now
+            return 0, {}
 
     def stop(self, *_) -> None:
         """Signal handler to terminate worker loop gracefully."""

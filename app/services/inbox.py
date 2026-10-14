@@ -294,6 +294,10 @@ class ImapReader(MailboxReader):
             results.sort(key=lambda m: m.uid)
             return results
 
+        except Exception as e:
+            logger.warning("IMAP fetch failed (%s): %s", host, e)
+            return []
+
         finally:
             try:
                 client.close()

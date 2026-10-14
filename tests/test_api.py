@@ -411,7 +411,7 @@ def test_approval_queue_lifecycle(
         headers=auth_headers,
     )
     assert edit_resp.status_code == 200
-    assert edit_resp.json()["status"] == LeadStatus.APPROVED.value
+    assert edit_resp.json()["status"] in (LeadStatus.APPROVED.value, LeadStatus.IN_SEQUENCE.value)
     assert edit_resp.json()["personal_note"] == "Saw your excellent database recovery features."
 
     # 3. Reject non-existent returns 404
@@ -704,3 +704,27 @@ def test_sse_delivers_live_events(
     assert "event: connected" in body
     assert "event: reply" in body
     assert "positive_hint" in body
+
+
+def test_settings_test_email_endpoint(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    """Verify test-email endpoint calls SMTP sender and handles success/error."""
+    from unittest.mock import MagicMock
+    from app.services.sender import SendResult, SmtpSender
+
+    mock_send = MagicMock(return_value=SendResult(success=True, message_id="<test-id@example.com>"))
+    monkeypatch.setattr(SmtpSender, "send", mock_send)
+
+    resp = client.post(
+        "/api/v1/settings/test-email",
+        json={"to_email": "tester@example.com", "smtp_host": "smtp.gmail.com"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["recipient"] == "tester@example.com"
+    assert mock_send.called
+

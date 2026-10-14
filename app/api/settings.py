@@ -8,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.schemas import SettingsUpdateRequest
+from app.api.schemas import SettingsUpdateRequest, TestEmailRequest
 from app.core.config import get_settings
 from app.models.setting import Setting
+from app.services.sender import OutgoingMail, SmtpSender
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -160,4 +161,71 @@ def update_whitelisted_settings(
         "status": "updated",
         "updated_keys": list(payload.settings.keys()),
         "settings": get_whitelisted_settings(db=db),
+    }
+
+
+@router.post("/test-email")
+def send_test_email(
+    payload: TestEmailRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Send an immediate real test email through SMTP to verify credentials and inbox delivery."""
+    get_settings.cache_clear()
+    cfg = get_settings()
+
+    host = payload.smtp_host or cfg.SMTP_HOST
+    port = payload.smtp_port or cfg.SMTP_PORT
+    username = payload.smtp_username or cfg.SMTP_USERNAME
+    pwd = payload.smtp_password or (
+        cfg.SMTP_PASSWORD.get_secret_value() if cfg.SMTP_PASSWORD else None
+    )
+    from_email = (
+        payload.from_email
+        or cfg.SMTP_FROM_EMAIL
+        or username
+        or "coldreach@localhost"
+    )
+    from_name = cfg.SMTP_FROM_NAME or "ColdReach Tester"
+
+    if not host or host == "smtp.example.com":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SMTP host is not configured yet. Please configure SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD in your .env file.",
+        )
+
+    sender = SmtpSender(
+        host=host,
+        port=port,
+        username=username,
+        password=pwd,
+        use_ssl=(port == 465),
+    )
+
+    outgoing = OutgoingMail(
+        to_email=payload.to_email,
+        from_email=from_email,
+        from_name=from_name,
+        subject="[ColdReach] Live SMTP Test - Delivery Successful!",
+        body=(
+            f"Hello!\n\n"
+            f"Congratulations! This test email was successfully dispatched from ColdReach directly via your SMTP server.\n\n"
+            f"• SMTP Server: {host}:{port}\n"
+            f"• Sender Address: {from_email}\n"
+            f"• Recipient: {payload.to_email}\n\n"
+            f"Your personal mail delivery is fully operational and ready for campaign outreach!"
+        ),
+    )
+
+    result = sender.send(outgoing)
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"SMTP delivery failed: {result.error} (type: {result.error_type})",
+        )
+
+    return {
+        "success": True,
+        "message_id": result.message_id,
+        "recipient": payload.to_email,
+        "detail": f"Test email sent successfully to {payload.to_email} via {host}:{port}",
     }
