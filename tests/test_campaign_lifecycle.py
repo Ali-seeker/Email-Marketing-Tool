@@ -164,3 +164,96 @@ def test_automatic_campaign_completion(test_env):
         assert cid in [c.id for c in completed]
         db.refresh(camp)
         assert camp.status == CampaignStatus.COMPLETED.value
+
+
+def test_campaign_waits_for_all_followups_before_completing(test_env):
+    """Verify that a campaign does NOT complete if follow-up emails are still pending/draft,
+    and only completes once the final follow-up step is sent."""
+    _, sm, clock = test_env
+
+    with sm() as db:
+        camp = Campaign(name="Followup Check Camp", niche="Tech", status=CampaignStatus.ACTIVE.value)
+        db.add(camp)
+        db.commit()
+        db.refresh(camp)
+        cid = camp.id
+
+        # Add sequence steps (Step 1 cold, Step 2 follow-up, Step 3 follow-up)
+        for s in (1, 2, 3):
+            db.add(
+                SequenceStep(
+                    campaign_id=cid,
+                    step=s,
+                    delay_days=2 * (s - 1),
+                    subjects=[f"Step {s} subject"],
+                    bodies=[f"Step {s} body"],
+                )
+            )
+
+        lead = Lead(
+            campaign_id=cid,
+            email="lead_followup@example.com",
+            status=LeadStatus.IN_SEQUENCE.value,
+            risk_level=RiskLevel.OK.value,
+        )
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+
+        # Step 1 is SENT
+        msg1 = EmailMessage(
+            lead_id=lead.id,
+            step=1,
+            subject="Step 1",
+            body="Body 1",
+            status=EmailMessageStatus.SENT.value,
+            sent_at=clock.now(),
+        )
+        # Step 2 is APPROVED (pending follow-up)
+        msg2 = EmailMessage(
+            lead_id=lead.id,
+            step=2,
+            subject="Step 2",
+            body="Body 2",
+            status=EmailMessageStatus.APPROVED.value,
+        )
+        # Step 3 is DRAFT (future follow-up)
+        msg3 = EmailMessage(
+            lead_id=lead.id,
+            step=3,
+            subject="Step 3",
+            body="Body 3",
+            status=EmailMessageStatus.DRAFT.value,
+        )
+        db.add_all([msg1, msg2, msg3])
+        db.commit()
+
+        # Check 1: Step 1 was sent, but Step 2 and Step 3 follow-ups are NOT sent yet.
+        # Campaign MUST NOT be completed!
+        completed = check_and_update_completed_campaigns(db, clock, campaign_id=cid)
+        assert len(completed) == 0
+        db.refresh(camp)
+        assert camp.status == CampaignStatus.ACTIVE.value
+
+        # Check 2: Step 2 (Follow-up 1) is sent, but Step 3 (Follow-up 2) is still DRAFT
+        msg2.status = EmailMessageStatus.SENT.value
+        msg2.sent_at = clock.now()
+        db.commit()
+
+        completed = check_and_update_completed_campaigns(db, clock, campaign_id=cid)
+        assert len(completed) == 0
+        db.refresh(camp)
+        assert camp.status == CampaignStatus.ACTIVE.value
+
+        # Check 3: Final follow-up (Step 3) is finally sent!
+        msg3.status = EmailMessageStatus.SENT.value
+        msg3.sent_at = clock.now()
+        db.commit()
+
+        # Now all follow-ups have been sent!
+        completed = check_and_update_completed_campaigns(db, clock, campaign_id=cid)
+        assert cid in [c.id for c in completed]
+        db.refresh(camp)
+        assert camp.status == CampaignStatus.COMPLETED.value
+        db.refresh(lead)
+        assert lead.status == LeadStatus.COMPLETED.value

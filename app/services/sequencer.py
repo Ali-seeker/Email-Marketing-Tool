@@ -500,7 +500,7 @@ def check_completed_leads(
     db: Session,
     clock: Clock | None = None,
 ) -> list[Lead]:
-    """Identify leads whose Step 4 was sent > 7 days ago with no reply, and mark completed."""
+    """Identify leads whose final sequence step was sent > 7 days ago with no reply, and mark completed."""
     clk = clock or system_clock
     now = clk.now()
     if now.tzinfo is None:
@@ -513,19 +513,24 @@ def check_completed_leads(
     threshold_delta = timedelta(days=7)
 
     for lead in leads_in_sequence:
-        step_4 = db.scalar(
+        max_step = db.scalar(
+            select(func.max(SequenceStep.step)).where(
+                SequenceStep.campaign_id == lead.campaign_id
+            )
+        ) or 4
+        last_step_msg = db.scalar(
             select(EmailMessage).where(
                 EmailMessage.lead_id == lead.id,
-                EmailMessage.step == 4,
+                EmailMessage.step == max_step,
             )
         )
         if (
-            step_4
-            and step_4.status
+            last_step_msg
+            and last_step_msg.status
             in (EmailMessageStatus.SENT.value, EmailMessageStatus.SENT_DRY_RUN.value)
-            and step_4.sent_at is not None
+            and last_step_msg.sent_at is not None
         ):
-            sent_time = step_4.sent_at
+            sent_time = last_step_msg.sent_at
             if sent_time.tzinfo is None:
                 sent_time = sent_time.replace(tzinfo=UTC)
 
@@ -536,7 +541,7 @@ def check_completed_leads(
                     Event(
                         lead_id=lead.id,
                         type="completed",
-                        payload={"step": 4, "sent_at": sent_time.isoformat()},
+                        payload={"step": max_step, "sent_at": sent_time.isoformat()},
                         created_at=now,
                     )
                 )
@@ -553,15 +558,17 @@ def check_and_update_completed_campaigns(
 ) -> list[Campaign]:
     """Inspect active or paused campaigns and automatically mark them as COMPLETED
 
-    when all leads in the campaign have finished their sequences.
+    only when all leads in the campaign have had ALL their follow-ups sent.
 
-    A campaign is considered complete when:
-    1. total_leads > 0 (it has at least 1 lead)
-    2. Zero leads remain in incomplete statuses:
-       ['new', 'valid', 'personalized', 'approved', 'needs_manual_note', 'in_sequence', 'paused'].
-       (All leads are in terminal states: ['completed', 'replied', 'bounced', 'unsubscribed', 'won', 'invalid']).
-    3. Zero emails remain in pending states:
+    A campaign is complete when:
+    1. total_leads > 0 (it has at least 1 lead).
+    2. Zero pending / scheduled / draft emails remain across the campaign:
        ['scheduled', 'draft', 'needs_review', 'approved', 'sending'].
+    3. Every enrolled lead has had all follow-up steps sent (max sequence step has
+       status 'sent' or 'sent_dry_run') or reached a terminal outcome
+       ('replied', 'bounced', 'unsubscribed', 'won', 'invalid', 'completed').
+    4. Zero leads remain in incomplete un-enrolled states:
+       ['new', 'valid', 'personalized', 'approved', 'needs_manual_note', 'paused'].
     """
     clk = clock or system_clock
     now = clk.now()
@@ -577,16 +584,6 @@ def check_and_update_completed_campaigns(
     candidates = db.scalars(stmt).all()
     completed: list[Campaign] = []
 
-    incomplete_lead_statuses = [
-        LeadStatus.NEW.value,
-        LeadStatus.VALID.value,
-        LeadStatus.PERSONALIZED.value,
-        LeadStatus.APPROVED.value,
-        LeadStatus.NEEDS_MANUAL_NOTE.value,
-        LeadStatus.IN_SEQUENCE.value,
-        LeadStatus.PAUSED.value,
-    ]
-
     pending_email_statuses = [
         EmailMessageStatus.SCHEDULED.value,
         EmailMessageStatus.DRAFT.value,
@@ -596,21 +593,13 @@ def check_and_update_completed_campaigns(
     ]
 
     for campaign in candidates:
-        total_leads = db.scalar(
-            select(func.count(Lead.id)).where(Lead.campaign_id == campaign.id)
-        ) or 0
-        if total_leads == 0:
+        all_leads = db.scalars(
+            select(Lead).where(Lead.campaign_id == campaign.id)
+        ).all()
+        if not all_leads:
             continue
 
-        incomplete_count = db.scalar(
-            select(func.count(Lead.id)).where(
-                Lead.campaign_id == campaign.id,
-                Lead.status.in_(incomplete_lead_statuses),
-            )
-        ) or 0
-        if incomplete_count > 0:
-            continue
-
+        # 1. Any pending/draft/scheduled email means follow-ups are still pending!
         pending_emails_count = db.scalar(
             select(func.count(EmailMessage.id))
             .join(Lead, Lead.id == EmailMessage.lead_id)
@@ -622,13 +611,79 @@ def check_and_update_completed_campaigns(
         if pending_emails_count > 0:
             continue
 
+        # 2. Get the maximum sequence step defined for this campaign
+        max_step = db.scalar(
+            select(func.max(SequenceStep.step)).where(
+                SequenceStep.campaign_id == campaign.id
+            )
+        ) or 4
+
+        # 3. Check every lead in the campaign
+        all_leads_finished = True
+        leads_to_mark_completed: list[Lead] = []
+
+        for lead in all_leads:
+            if lead.status in (
+                LeadStatus.COMPLETED.value,
+                LeadStatus.REPLIED.value,
+                LeadStatus.BOUNCED.value,
+                LeadStatus.UNSUBSCRIBED.value,
+                LeadStatus.WON.value,
+                LeadStatus.INVALID.value,
+            ):
+                continue
+
+            if lead.status == LeadStatus.IN_SEQUENCE.value:
+                # Verify that this lead's final follow-up step was actually sent
+                final_msg = db.scalar(
+                    select(EmailMessage).where(
+                        EmailMessage.lead_id == lead.id,
+                        EmailMessage.step == max_step,
+                    )
+                )
+                if (
+                    final_msg
+                    and final_msg.status in (
+                        EmailMessageStatus.SENT.value,
+                        EmailMessageStatus.SENT_DRY_RUN.value,
+                    )
+                ):
+                    # All follow-up steps (1..max_step) have been sent!
+                    leads_to_mark_completed.append(lead)
+                    continue
+                else:
+                    # Final follow-up not sent yet!
+                    all_leads_finished = False
+                    break
+            else:
+                # Lead is in new, valid, personalized, approved, needs_manual_note, or paused
+                all_leads_finished = False
+                break
+
+        if not all_leads_finished:
+            continue
+
+        # Mark finished leads as completed
+        for lead in leads_to_mark_completed:
+            lead.status = LeadStatus.COMPLETED.value
+            lead.updated_at = now
+            db.add(
+                Event(
+                    lead_id=lead.id,
+                    type="completed",
+                    payload={"step": max_step, "reason": "all_followups_sent"},
+                    created_at=now,
+                )
+            )
+
+        # Mark campaign as completed
         campaign.status = CampaignStatus.COMPLETED.value
         completed.append(campaign)
         logger.info(
-            "Campaign #%d ('%s') automatically marked as COMPLETED: all %d leads finished sequence.",
+            "Campaign #%d ('%s') automatically marked as COMPLETED: all %d leads and their follow-ups have been sent.",
             campaign.id,
             campaign.name,
-            total_leads,
+            len(all_leads),
         )
 
     if completed:
