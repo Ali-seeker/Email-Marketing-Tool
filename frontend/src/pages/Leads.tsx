@@ -20,6 +20,9 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  Edit2,
+  PenLine,
+  Check,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import type {
@@ -54,6 +57,8 @@ export function LeadsPage() {
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null)
   const [selectedLeads, setSelectedLeads] = useState<Lead[]>([])
   const [expandedStepIds, setExpandedStepIds] = useState<Record<number, boolean>>({})
+  const [noteText, setNoteText] = useState('')
+  const [isEditingNote, setIsEditingNote] = useState(false)
 
   // Fetch campaigns for top context & CSV defaults
   const { data: campaignsData } = useQuery({
@@ -105,6 +110,36 @@ export function LeadsPage() {
     queryKey: ['leadTimeline', selectedLeadId],
     queryFn: () => api.leads.get(selectedLeadId!),
     enabled: selectedLeadId !== null,
+  })
+
+  // Synchronize note state when leadTimeline loads or changes
+  useEffect(() => {
+    if (leadTimeline) {
+      setNoteText(leadTimeline.personal_note || '')
+      setIsEditingNote(leadTimeline.status === 'needs_manual_note' || !leadTimeline.personal_note)
+    }
+  }, [leadTimeline])
+
+  // Mutation to save personal note and immediately enroll into sequence
+  const editAndApproveMutation = useMutation({
+    mutationFn: ({ id, note }: { id: number; note: string }) =>
+      api.approval.editAndApprove(id, note),
+    onSuccess: () => {
+      toast({
+        title: 'Note Saved & Lead Enrolled',
+        message: 'Personal note add ho gaya hai aur lead outreach sequence me enroll ho chuki hai.',
+        type: 'success',
+      })
+      setIsEditingNote(false)
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['leadTimeline', selectedLeadId] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['funnel'] })
+      queryClient.invalidateQueries({ queryKey: ['pendingApprovalCount'] })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Failed to Save Note', message: err.message, type: 'error' })
+    },
   })
 
   // Mutations for Lead Actions
@@ -251,8 +286,29 @@ export function LeadsPage() {
       {
         accessorKey: 'status',
         header: 'Status',
-        size: 130,
-        cell: ({ row }) => <StatusChip status={row.original.status} />,
+        size: 170,
+        cell: ({ row }) => {
+          const lead = row.original
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <StatusChip status={lead.status} />
+              {lead.status === 'needs_manual_note' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedLeadId(lead.id)
+                    setIsEditingNote(true)
+                  }}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 transition-colors cursor-pointer shrink-0"
+                  title="Click to write opening personal note"
+                >
+                  <PenLine className="w-2.5 h-2.5" /> Add Note
+                </button>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'risk_level',
@@ -699,15 +755,129 @@ export function LeadsPage() {
                   <span className="capitalize">{leadTimeline.risk_level || 'OK'}</span>
                 </div>
               </div>
+            </div>
 
-              {leadTimeline.personal_note && (
-                <div className="pt-2 border-t border-border/60">
-                  <span className="font-semibold text-foreground flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-500" /> Personal Note:
+            {/* Personal Note Editor Card */}
+            <div className="p-3.5 bg-card rounded-lg border border-border space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-indigo-500" /> Opening Personal Note
+                </span>
+                {leadTimeline.status === 'needs_manual_note' ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Manual Note Required
                   </span>
-                  <p className="mt-1 text-muted-foreground italic bg-card p-2 rounded-md border border-border/60 leading-relaxed">
+                ) : leadTimeline.personal_note && !isEditingNote ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoteText(leadTimeline.personal_note || '')
+                      setIsEditingNote(true)
+                    }}
+                    className="px-2 py-1 text-[11px] font-medium border border-border hover:bg-muted text-foreground rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit2 className="w-3 h-3 text-primary" /> Edit Note
+                  </button>
+                ) : null}
+              </div>
+
+              {/* Editor View */}
+              {(isEditingNote || leadTimeline.status === 'needs_manual_note' || !leadTimeline.personal_note) ? (
+                <div className="space-y-2.5">
+                  {leadTimeline.status === 'needs_manual_note' && (
+                    <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-md text-[11px] text-amber-800 dark:text-amber-300 space-y-1">
+                      <p className="font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Manual Opening Line Required
+                      </p>
+                      <p>
+                        Is lead ke liye website scraping se personal note generate nahi ho saka. Niche custom opening line likhein aur sequence me enroll karein.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Quick Suggestion Chips */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                      Suggestions (Click to insert):
+                    </span>
+                    <div className="flex flex-col gap-1.5">
+                      {[
+                        `Loved ${leadTimeline.company || 'your team'}'s latest automation milestone and product updates.`,
+                        `Saw ${leadTimeline.company || 'your company'}'s impressive growth and work in the industry.`,
+                        `Came across your profile as ${leadTimeline.title || 'Leader'} at ${leadTimeline.company || 'your team'} and was really impressed.`,
+                      ].map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setNoteText(suggestion)}
+                          className="text-[11px] px-2.5 py-1.5 bg-muted/60 hover:bg-muted border border-border rounded-md text-foreground text-left transition-colors cursor-pointer truncate"
+                          title={suggestion}
+                        >
+                          💡 {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <textarea
+                      rows={3}
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      placeholder="Write opening 1-2 personalized sentences for this lead..."
+                      className="w-full text-xs p-2.5 bg-background border border-border rounded-md focus:outline-hidden focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground leading-relaxed resize-none"
+                    />
+                    <span className="absolute right-2 bottom-2 text-[10px] text-muted-foreground tabular-nums">
+                      {noteText.length}/500
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    {leadTimeline.personal_note && isEditingNote && leadTimeline.status !== 'needs_manual_note' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNoteText(leadTimeline.personal_note || '')
+                          setIsEditingNote(false)
+                        }}
+                        className="px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-muted text-foreground rounded-md transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!noteText.trim() || editAndApproveMutation.isPending}
+                      onClick={() => {
+                        if (leadTimeline) {
+                          editAndApproveMutation.mutate({ id: leadTimeline.id, note: noteText })
+                        }
+                      }}
+                      className="px-3.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-md shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {editAndApproveMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Save Note & Enroll Lead
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Read-only note display */
+                <div className="space-y-1.5">
+                  <p className="text-muted-foreground italic bg-muted/30 p-2.5 rounded-md border border-border/60 leading-relaxed text-xs">
                     "{leadTimeline.personal_note}"
                   </p>
+                  {leadTimeline.evidence_quote && (
+                    <p className="text-[10px] text-muted-foreground">
+                      <strong className="text-foreground">Evidence Quote:</strong> {leadTimeline.evidence_quote}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
