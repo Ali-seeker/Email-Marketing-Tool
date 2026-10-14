@@ -540,3 +540,62 @@ def test_planner_daily_capacity_and_earliest_send_at(plan_db: Session) -> None:
     assert msg.id in [m.id for m in dues]
 
 
+def test_realign_scheduled_emails_on_settings_change(plan_db: Session) -> None:
+    """Verify realign_scheduled_emails shifts scheduled messages when days/windows change."""
+    import json
+    from app.services.planner import realign_scheduled_emails
+    from app.services.sequencer import can_send
+
+    campaign = plan_db.scalar(select(Campaign))
+    assert campaign is not None
+
+    # Tuesday Nov 3, 2026 at 09:00 UTC
+    clock = FakeClock(datetime(2026, 11, 3, 9, 0, tzinfo=UTC))
+
+    lead = Lead(
+        campaign_id=campaign.id,
+        email="realign_test@acme.com",
+        status=LeadStatus.IN_SEQUENCE.value,
+        timezone="UTC",
+        personal_note="Great work on your tech stack!",
+    )
+    plan_db.add(lead)
+    plan_db.commit()
+    plan_db.refresh(lead)
+
+    # Email currently scheduled for Tuesday at 10:00 UTC
+    msg = EmailMessage(
+        lead_id=lead.id,
+        step=1,
+        subject="Test",
+        body="Body",
+        status=EmailMessageStatus.SCHEDULED.value,
+        scheduled_at=datetime(2026, 11, 3, 10, 0, tzinfo=UTC),
+    )
+    plan_db.add(msg)
+    plan_db.commit()
+
+    # Now change settings: only Wednesday and Thursday allowed, window 14:00 - 16:00
+    plan_db.merge(Setting(key="SEND_DAYS", value=json.dumps(["Wed", "Thu"])))
+    plan_db.merge(Setting(key="SEND_WINDOW_START", value="14:00"))
+    plan_db.merge(Setting(key="SEND_WINDOW_END", value="16:00"))
+    plan_db.commit()
+
+    # Verify can_send rejects on Tuesday at 10:00
+    assert can_send(lead, msg, plan_db, clock=clock) is False
+
+    # Trigger realignment
+    realigned = realign_scheduled_emails(plan_db, clock=clock)
+    assert realigned == 1
+
+    plan_db.refresh(msg)
+    # New slot must be Wednesday (Nov 4) inside window [14:00, 16:00]
+    assert msg.scheduled_at.weekday() == 2  # Wednesday
+    assert time(14, 0) <= msg.scheduled_at.time() <= time(16, 0)
+
+    # When clock reaches Wednesday 14:00, can_send allows it!
+    clock = FakeClock(datetime(2026, 11, 4, 14, 5, tzinfo=UTC))
+    assert can_send(lead, msg, plan_db, clock=clock) is True
+
+
+

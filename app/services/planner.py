@@ -596,3 +596,109 @@ def plan_day(
     finally:
         if close_session_on_exit:
             db.close()
+
+
+def realign_scheduled_emails(
+    db: Session,
+    clock: Clock | None = None,
+) -> int:
+    """Realign all currently SCHEDULED email messages when outreach days, window times,
+    or mailbox timezone are updated.
+
+    Ensures that any message whose assigned scheduled_at falls outside the newly configured
+    days or window is automatically shifted forward to the next valid slot.
+    """
+    clk = clock or system_clock
+    now_utc = clk.now()
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=UTC)
+
+    mailbox_tz = get_mailbox_tz(db)
+    allowed_weekdays = get_allowed_weekdays(db)
+    window_start_time, window_end_time = get_send_window(db)
+    min_gap_sec = int(get_setting(db, "MIN_GAP_SECONDS", default=120))
+
+    scheduled_msgs = db.scalars(
+        select(EmailMessage)
+        .where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
+        .order_by(EmailMessage.scheduled_at.asc(), EmailMessage.id.asc())
+    ).all()
+
+    if not scheduled_msgs:
+        return 0
+
+    realigned_count = 0
+    last_scheduled_utc: datetime | None = None
+
+    for msg in scheduled_msgs:
+        lead = msg.lead or db.get(Lead, msg.lead_id)
+        if not lead:
+            continue
+
+        lead_tz: ZoneInfo
+        if not lead.timezone or not lead.timezone.strip():
+            lead_tz = mailbox_tz
+        else:
+            try:
+                lead_tz = ZoneInfo(lead.timezone.strip())
+            except Exception:
+                lead_tz = mailbox_tz
+
+        # Check if current scheduled_at is already compliant
+        current_dt = msg.scheduled_at
+        if current_dt is not None:
+            if current_dt.tzinfo is None:
+                current_dt = current_dt.replace(tzinfo=UTC)
+            local_dt = current_dt.astimezone(lead_tz)
+            is_valid_day = local_dt.weekday() in allowed_weekdays
+            is_valid_time = window_start_time <= local_dt.time() <= window_end_time
+            is_future = current_dt >= now_utc
+            if is_valid_day and is_valid_time and is_future:
+                last_scheduled_utc = current_dt
+                continue
+
+        # Find the next valid slot for this lead
+        start_date = now_utc.astimezone(lead_tz).date()
+        earliest_possible_utc = now_utc
+        if last_scheduled_utc is not None:
+            earliest_possible_utc = max(
+                earliest_possible_utc,
+                last_scheduled_utc + timedelta(seconds=min_gap_sec),
+            )
+
+        day_cursor = start_date
+        chosen_slot_utc: datetime | None = None
+
+        while chosen_slot_utc is None:
+            if day_cursor.weekday() not in allowed_weekdays:
+                day_cursor += timedelta(days=1)
+                continue
+
+            win_start_local = datetime.combine(day_cursor, window_start_time, tzinfo=lead_tz)
+            win_end_local = datetime.combine(day_cursor, window_end_time, tzinfo=lead_tz)
+            win_start_utc = win_start_local.astimezone(UTC)
+            win_end_utc = win_end_local.astimezone(UTC)
+
+            if earliest_possible_utc > win_end_utc:
+                day_cursor += timedelta(days=1)
+                continue
+
+            slot_candidate_utc = max(win_start_utc, earliest_possible_utc)
+            if slot_candidate_utc <= win_end_utc:
+                chosen_slot_utc = slot_candidate_utc
+            else:
+                day_cursor += timedelta(days=1)
+
+        msg.scheduled_at = chosen_slot_utc
+        last_scheduled_utc = chosen_slot_utc
+        realigned_count += 1
+
+    if realigned_count > 0:
+        db.commit()
+        logger.info(
+            "Realigned %d scheduled emails to match updated days/window settings.",
+            realigned_count,
+        )
+
+    return realigned_count
+

@@ -172,9 +172,17 @@ def update_whitelisted_settings(
 
     db.commit()
 
+    # Realign any currently scheduled emails to the new window/days
+    schedule_keys = {"SEND_DAYS", "SEND_WINDOW_START", "SEND_WINDOW_END", "MAILBOX_TZ"}
+    realigned_count = 0
+    if schedule_keys.intersection(payload.settings.keys()):
+        from app.services.planner import realign_scheduled_emails
+        realigned_count = realign_scheduled_emails(db=db)
+
     return {
         "status": "updated",
         "updated_keys": list(payload.settings.keys()),
+        "realigned_emails": realigned_count,
         "settings": get_whitelisted_settings(db=db),
     }
 
