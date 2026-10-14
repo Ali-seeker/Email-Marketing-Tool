@@ -94,6 +94,55 @@ def _load_disposable_domains() -> set[str]:
 
 DISPOSABLE_DOMAINS = _load_disposable_domains()
 
+# Common misspelled / typosquatting domains of major email providers
+COMMON_TYPO_DOMAINS: dict[str, str] = {
+    # Gmail typos
+    "gail.com": "gmail.com",
+    "gmial.com": "gmail.com",
+    "gmai.com": "gmail.com",
+    "gamil.com": "gmail.com",
+    "gmaill.com": "gmail.com",
+    "gmail.co": "gmail.com",
+    "gmail.con": "gmail.com",
+    "gemail.com": "gmail.com",
+    "gmeil.com": "gmail.com",
+    "gmailc.om": "gmail.com",
+    "gmaio.com": "gmail.com",
+    "gmai.co": "gmail.com",
+    "gmail.cm": "gmail.com",
+    "gmaik.com": "gmail.com",
+    "gmal.com": "gmail.com",
+    "gmaile.com": "gmail.com",
+    # Yahoo typos
+    "yaho.com": "yahoo.com",
+    "yahooo.com": "yahoo.com",
+    "yaho.co": "yahoo.com",
+    "yahoo.con": "yahoo.com",
+    "yaho.cm": "yahoo.com",
+    "yhaoo.com": "yahoo.com",
+    "yaho.org": "yahoo.com",
+    "yhoo.com": "yahoo.com",
+    "ymail.con": "ymail.com",
+    # Hotmail typos
+    "hotmial.com": "hotmail.com",
+    "hotmai.com": "hotmail.com",
+    "hotmaill.com": "hotmail.com",
+    "hotmail.con": "hotmail.com",
+    "hotmeil.com": "hotmail.com",
+    "hotamil.com": "hotmail.com",
+    # Outlook typos
+    "outlok.com": "outlook.com",
+    "outloo.com": "outlook.com",
+    "outlock.com": "outlook.com",
+    "outlook.con": "outlook.com",
+    "outllok.com": "outlook.com",
+    "otlook.com": "outlook.com",
+    # iCloud typos
+    "iclud.com": "icloud.com",
+    "icoud.com": "icloud.com",
+    "icloud.con": "icloud.com",
+}
+
 
 @dataclass
 class ValidationSummary:
@@ -187,6 +236,14 @@ def evaluate_email(
     # 2. Disposable domain check
     if domain in DISPOSABLE_DOMAINS:
         return RiskLevel.BAD.value, f"Disposable email domain: {domain}"
+
+    # 2b. Known typo / misspelled domain check (protects against high bounce rates and typosquatting)
+    if domain in COMMON_TYPO_DOMAINS:
+        intended = COMMON_TYPO_DOMAINS[domain]
+        return (
+            RiskLevel.BAD.value,
+            f"Misspelled domain '{domain}' (did you mean '{intended}'?). High bounce risk.",
+        )
 
     # Track potential risk reasons
     risk_level = RiskLevel.OK.value

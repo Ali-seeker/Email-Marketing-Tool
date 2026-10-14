@@ -36,6 +36,11 @@ def test_syntax_and_disposable_and_role_checks(val_db: Session, fake_clock: Fake
     assert risk == RiskLevel.BAD.value
     assert "disposable" in reason.lower()
 
+    # Typo domain (e.g. gail.com instead of gmail.com)
+    risk, reason = evaluate_email("anwar@gail.com", None, val_db, dns, verifier, fake_clock)
+    assert risk == RiskLevel.BAD.value
+    assert "misspelled" in reason.lower() or "gmail.com" in reason.lower()
+
     # Role-based mailbox
     risk, reason = evaluate_email(
         "support@company.com", "https://company.com", val_db, dns, verifier, fake_clock
