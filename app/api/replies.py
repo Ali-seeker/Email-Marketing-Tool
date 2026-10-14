@@ -1,6 +1,6 @@
 """Inbound reply monitoring and classification API endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -22,6 +22,7 @@ def list_replies(
     classification: Annotated[str | None, Query(description="Filter by classification")] = None,
     is_positive_hint: Annotated[bool | None, Query(description="Filter positive hints")] = None,
     lead_id: Annotated[int | None, Query(description="Filter by lead ID")] = None,
+    to_email: Annotated[str | None, Query(description="Filter by mailbox email")] = None,
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[ReplyResponse]:
     """List captured inbound replies with classifications and positive sentiment flags."""
@@ -33,6 +34,8 @@ def list_replies(
         query = query.where(Reply.is_positive_hint == is_positive_hint)
     if lead_id is not None:
         query = query.where(Reply.lead_id == lead_id)
+    if to_email:
+        query = query.where(Reply.to_email == to_email.strip().lower())
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
@@ -111,3 +114,34 @@ def mark_reply_won(
             db.commit()
 
     return ReplyResponse.model_validate(reply)
+
+
+@router.get("/inboxes")
+def get_reply_inboxes(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Return distinct inboxes that have received replies, with count of replies."""
+    from app.models.mailbox import Mailbox
+
+    mailboxes = db.scalars(select(Mailbox).order_by(Mailbox.id.asc())).all()
+    mb_map = {m.email.lower(): m.display_name for m in mailboxes}
+
+    rows = db.execute(
+        select(Reply.to_email, func.count(Reply.id))
+        .where(Reply.to_email.isnot(None))
+        .group_by(Reply.to_email)
+    ).all()
+
+    counts = {r[0].lower(): r[1] for r in rows if r[0]}
+
+    # Combine registered mailboxes with actual reply destinations
+    all_emails = set(mb_map.keys()) | set(counts.keys())
+    results = []
+    for email in sorted(all_emails):
+        results.append(
+            {
+                "email": email,
+                "display_name": mb_map.get(email, email.split("@")[0]),
+                "replies_count": counts.get(email, 0),
+            }
+        )
+    return results
+

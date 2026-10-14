@@ -359,3 +359,52 @@ class TestEmailRequest(BaseModel):
     smtp_username: str | None = None
     smtp_password: str | None = None
     from_email: str | None = None
+
+
+# =============================================================================
+# Mailboxes
+# =============================================================================
+class MailboxCreateRequest(BaseModel):
+    email: str = Field(..., description="Mailbox email address")
+    display_name: str = Field("ColdReach Operator", description="Sender display name")
+    smtp_host: str = Field("smtp.gmail.com")
+    smtp_port: int = Field(465)
+    smtp_username: str | None = None
+    smtp_password: str = Field(..., description="App Password")
+    imap_host: str = Field("imap.gmail.com")
+    imap_port: int = Field(993)
+    imap_username: str | None = None
+    imap_password: str | None = None
+    daily_send_cap: int = Field(30, ge=1, le=100)
+    is_active: bool = True
+
+
+class MailboxUpdateRequest(BaseModel):
+    display_name: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    imap_host: str | None = None
+    imap_port: int | None = None
+    imap_username: str | None = None
+    imap_password: str | None = None
+    daily_send_cap: int | None = Field(None, ge=1, le=100)
+    is_active: bool | None = None
+
+
+class MailboxResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    display_name: str
+    smtp_host: str
+    smtp_port: int
+    daily_send_cap: int
+    is_active: bool
+    sent_today: int = 0
+    remaining_today: int = 0
+    created_at: datetime
+    updated_at: datetime
+

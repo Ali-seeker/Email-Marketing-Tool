@@ -11,6 +11,7 @@ const LeadsPage = lazy(() => import('@/pages/Leads').then((m) => ({ default: m.L
 const ApprovalPage = lazy(() => import('@/pages/Approval').then((m) => ({ default: m.ApprovalPage })))
 const RepliesPage = lazy(() => import('@/pages/Replies').then((m) => ({ default: m.RepliesPage })))
 const CampaignsPage = lazy(() => import('@/pages/Campaigns').then((m) => ({ default: m.CampaignsPage })))
+const MailboxesPage = lazy(() => import('@/pages/Mailboxes').then((m) => ({ default: m.MailboxesPage })))
 const SafetyPage = lazy(() => import('@/pages/Safety').then((m) => ({ default: m.SafetyPage })))
 const SettingsPage = lazy(() => import('@/pages/Settings').then((m) => ({ default: m.SettingsPage })))
 
@@ -44,6 +45,7 @@ export function App() {
                   <Route path="/approval" element={<ApprovalPage />} />
                   <Route path="/replies" element={<RepliesPage />} />
                   <Route path="/campaigns" element={<CampaignsPage />} />
+                  <Route path="/mailboxes" element={<MailboxesPage />} />
                   <Route path="/safety" element={<SafetyPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="*" element={<Navigate to="/" replace />} />

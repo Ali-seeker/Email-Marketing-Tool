@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { NavLink, Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -17,6 +17,8 @@ import {
   Activity,
   Radio,
   Flame,
+  Bell,
+  Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTheme } from './ThemeProvider'
@@ -59,9 +61,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const { data: unhandledRepliesData } = useQuery({
     queryKey: ['unhandledRepliesCount'],
-    queryFn: () => api.replies.list({ page_size: 1, unhandled_only: true }),
+    queryFn: () => api.replies.list({ page_size: 1 }),
     refetchInterval: 15000,
   })
+
+  // Notifications dropdown replies
+  const { data: recentRepliesData } = useQuery({
+    queryKey: ['recentRepliesNotifications'],
+    queryFn: () => api.replies.list({ page_size: 8 }),
+    refetchInterval: 15000,
+  })
+
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const notificationsRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false)
+      }
+    }
+    if (isNotificationsOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isNotificationsOpen])
+
+  // Live Mode Toggle State
+  const [showLiveConfirmModal, setShowLiveConfirmModal] = useState(false)
+  const [isTogglingMode, setIsTogglingMode] = useState(false)
+
+  const handleToggleMode = async (targetLive: boolean) => {
+    try {
+      setIsTogglingMode(true)
+      const res = await api.settings.toggleLiveMode(targetLive)
+      toast({
+        title: targetLive ? '🔥 LIVE Mode Activated' : '🛡️ DRY-RUN Mode Activated',
+        message: res.message,
+        type: targetLive ? 'warning' : 'success',
+      })
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+    } catch (err: any) {
+      toast({
+        title: 'Mode Switch Failed',
+        message: err.message || 'Could not change operating mode',
+        type: 'error',
+      })
+    } finally {
+      setIsTogglingMode(false)
+      setShowLiveConfirmModal(false)
+    }
+  }
 
   // SSE Live Event Listener
   useEffect(() => {
@@ -134,6 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       badgeVariant: 'info',
     },
     { name: 'Campaigns', to: '/campaigns', icon: Send },
+    { name: 'Mailboxes', to: '/mailboxes', icon: Mail },
     {
       name: 'Safety',
       to: '/safety',
@@ -307,32 +360,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Right: Mode Badge, Killswitch Pill, Theme Toggle */}
             <div className="flex items-center gap-2.5 shrink-0">
-              {/* DRY-RUN or LIVE Badge (read from server, cannot change in UI) */}
-              <div
+              {/* DRY-RUN vs LIVE Mode Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (isLive) {
+                    handleToggleMode(false)
+                  } else {
+                    setShowLiveConfirmModal(true)
+                  }
+                }}
+                disabled={isTogglingMode}
                 title={
                   isLive
-                    ? 'LIVE MODE: Real SMTP emails leave this host machine'
-                    : 'DRY-RUN MODE: Outbound emails are stored safely in local outbox only'
+                    ? 'Click to switch safely to DRY-RUN mode'
+                    : 'Click to switch to LIVE sending mode'
                 }
                 className={cn(
-                  'px-2.5 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5 border select-none',
+                  'px-2.5 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5 border transition-all cursor-pointer shadow-xs hover:opacity-90 active:scale-95 select-none',
                   isLive
-                    ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
-                    : 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                    ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 dark:hover:bg-rose-900/60'
+                    : 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 dark:hover:bg-emerald-900/60'
                 )}
               >
                 {isLive ? (
                   <>
                     <Flame className="w-3 h-3 text-rose-600 animate-pulse" aria-hidden="true" />
-                    LIVE
+                    <span>LIVE</span>
                   </>
                 ) : (
                   <>
                     <Radio className="w-3 h-3 text-emerald-600" aria-hidden="true" />
-                    DRY-RUN
+                    <span>DRY-RUN</span>
                   </>
                 )}
-              </div>
+              </button>
 
               {/* Killswitch Status Pill */}
               <button
@@ -362,6 +424,109 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
               </button>
 
+              {/* Reply Notifications Bell */}
+              <div className="relative" ref={notificationsRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationsOpen((prev) => !prev)}
+                  title="Lead replies notifications"
+                  className={cn(
+                    'relative w-8 h-8 rounded-md border border-border flex items-center justify-center transition-colors cursor-pointer',
+                    isNotificationsOpen
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  )}
+                  aria-label="View reply notifications"
+                  aria-expanded={isNotificationsOpen}
+                >
+                  <Bell className="w-4 h-4" aria-hidden="true" />
+                  {repliesCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                      {repliesCount > 99 ? '99+' : repliesCount}
+                    </span>
+                  )}
+                </button>
+
+                {isNotificationsOpen && (
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                    <div className="p-3 bg-muted/50 border-b border-border flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-primary" />
+                        <span className="text-xs font-bold text-foreground">Lead Replies</span>
+                        {repliesCount > 0 && (
+                          <span className="px-1.5 py-0.2 text-[10px] font-semibold bg-primary/10 text-primary rounded-full">
+                            {repliesCount} total
+                          </span>
+                        )}
+                      </div>
+                      <Link
+                        to="/replies"
+                        onClick={() => setIsNotificationsOpen(false)}
+                        className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+                      >
+                        All Replies →
+                      </Link>
+                    </div>
+
+                    <div className="max-h-[380px] overflow-y-auto divide-y divide-border/60">
+                      {recentRepliesData?.items && recentRepliesData.items.length > 0 ? (
+                        recentRepliesData.items.map((reply) => {
+                          const isPositive = reply.is_positive_hint || reply.classification === 'positive'
+                          return (
+                            <div
+                              key={reply.id}
+                              onClick={() => {
+                                setIsNotificationsOpen(false)
+                                navigate(`/replies?reply_id=${reply.id}${reply.to_email ? `&to_email=${encodeURIComponent(reply.to_email)}` : ''}`)
+                              }}
+                              className="p-3 hover:bg-muted/60 transition-colors cursor-pointer group"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                                      {reply.from_email}
+                                    </span>
+                                    {isPositive && (
+                                      <span className="px-1.5 py-0.2 text-[9px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-sm">
+                                        Positive
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] font-medium text-muted-foreground truncate mt-0.5">
+                                    {reply.subject || '(No subject)'}
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground/80 line-clamp-2 mt-0.5 leading-snug">
+                                    {reply.snippet || reply.body}
+                                  </p>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+                                  {new Date(reply.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              {reply.to_email && (
+                                <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                                  <Mail className="w-2.5 h-2.5 text-primary" />
+                                  <span className="truncate">to: {reply.to_email}</span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="p-8 text-center">
+                          <MessageSquare className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                          <p className="text-xs font-medium text-foreground">No replies yet</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            When prospects reply to your cold emails, notifications will appear here.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Theme Toggle */}
               <button
                 type="button"
@@ -386,6 +551,60 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      {/* Confirm Switch to LIVE Mode Modal */}
+      {showLiveConfirmModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="bg-card border border-border w-full max-w-md rounded-xl shadow-2xl p-5 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center shrink-0">
+                <Flame className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Switch to LIVE Sending Mode?</h3>
+                <p className="text-xs text-muted-foreground">Outbound emails will leave this machine</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-800 dark:text-rose-300 space-y-1.5">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" /> Real Outreach Warning
+              </p>
+              <p>
+                In <strong>LIVE</strong> mode, emails will be delivered directly to prospective clients via your connected SMTP mailboxes. Ensure sequences and recipients are verified before proceeding.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setShowLiveConfirmModal(false)}
+                className="px-3 py-1.5 text-xs font-medium border border-border hover:bg-muted text-foreground rounded-md transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isTogglingMode}
+                onClick={() => handleToggleMode(true)}
+                className="px-4 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                {isTogglingMode ? (
+                  'Switching...'
+                ) : (
+                  <>
+                    <Flame className="w-3.5 h-3.5" /> Confirm & Activate LIVE
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

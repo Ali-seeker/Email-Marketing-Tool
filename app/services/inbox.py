@@ -231,9 +231,11 @@ class ImapReader(MailboxReader):
         self,
         settings: Settings | None = None,
         imap_client_factory: Any | None = None,
+        mailbox: Any | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.client_factory = imap_client_factory or imaplib.IMAP4_SSL
+        self.mailbox = mailbox
 
     def fetch_new(self, since_uid: int = 0) -> list[IncomingMail]:
         """Fetch newly arrived messages via IMAP without mutating mailbox state."""
@@ -244,10 +246,16 @@ class ImapReader(MailboxReader):
             )
             return []
 
-        host = self.settings.IMAP_HOST
-        port = self.settings.IMAP_PORT
-        user = self.settings.imap_username
-        password = self.settings.imap_password
+        if self.mailbox:
+            host = self.mailbox.imap_host
+            port = self.mailbox.imap_port
+            user = self.mailbox.imap_username or self.mailbox.email
+            password = self.mailbox.imap_password
+        else:
+            host = self.settings.IMAP_HOST
+            port = self.settings.IMAP_PORT
+            user = self.settings.imap_username
+            password = self.settings.imap_password
 
         if not user or not password:
             logger.error("IMAP credentials missing; skipping inbox fetch.")
@@ -584,15 +592,16 @@ def calculate_bounce_rates(db: Session, now: datetime) -> dict[str, float]:
         )
         or 0
     )
-    bounces_7d = (
+    bounces_7d_raw = (
         db.scalar(
-            select(func.count(Event.id)).where(
+            select(func.count(func.distinct(Event.lead_id))).where(
                 Event.created_at >= start_7d,
                 Event.type == EventType.BOUNCED.value,
             )
         )
         or 0
     )
+    bounces_7d = min(sent_7d, bounces_7d_raw)
     rate_7d = (bounces_7d / sent_7d * 100.0) if sent_7d > 0 else 0.0
 
     # 2. Over last 100 sent emails
@@ -612,7 +621,7 @@ def calculate_bounce_rates(db: Session, now: datetime) -> dict[str, float]:
 
     total_recent = len(recent_sent)
     if total_recent > 0:
-        bounces_100 = (
+        bounces_100_raw = (
             db.scalar(
                 select(func.count(Lead.id)).where(
                     Lead.id.in_(recent_sent),
@@ -621,15 +630,22 @@ def calculate_bounce_rates(db: Session, now: datetime) -> dict[str, float]:
             )
             or 0
         )
+        bounces_100 = min(total_recent, bounces_100_raw)
         rate_100 = bounces_100 / total_recent * 100.0
     else:
         rate_100 = 0.0
+
+    sample_size_ok = sent_7d >= 20 or total_recent >= 20
 
     db.merge(Setting(key="BOUNCE_RATE_7D", value=f"{rate_7d:.2f}"))
     db.merge(Setting(key="BOUNCE_RATE_LAST_100", value=f"{rate_100:.2f}"))
     db.commit()
 
-    return {"bounce_rate_7d": rate_7d, "bounce_rate_last_100": rate_100}
+    return {
+        "bounce_rate_7d": rate_7d,
+        "bounce_rate_last_100": rate_100,
+        "sample_size_ok": sample_size_ok,
+    }
 
 
 def poll_inbox_and_process(
@@ -671,7 +687,9 @@ def poll_inbox_and_process(
         )
     )
 
-    if (
+    sample_size_ok = bool(stats.get("sample_size_ok", False))
+
+    if sample_size_ok and (
         stats["bounce_rate_7d"] >= configured_threshold
         or stats["bounce_rate_last_100"] >= configured_threshold
     ):

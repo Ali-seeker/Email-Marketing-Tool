@@ -24,6 +24,9 @@ import type {
   SafetyResumeRequest,
   WhitelistedSettings,
   PaginatedResult,
+  Mailbox,
+  MailboxCreate,
+  ReplyInbox,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -245,12 +248,40 @@ export const api = {
       classification?: string
       lead_id?: number
       unhandled_only?: boolean
+      to_email?: string
     }) =>
       request<PaginatedResult<Reply>>(`/api/v1/replies${buildQuery(params)}`),
+    inboxes: () =>
+      request<ReplyInbox[]>('/api/v1/replies/inboxes'),
     markHandled: (id: number) =>
       request<{ id: number; handled: boolean }>(`/api/v1/replies/${id}/mark-handled`, { method: 'POST' }),
     markWon: (id: number) =>
       request<{ id: number; status: string }>(`/api/v1/replies/${id}/mark-won`, { method: 'POST' }),
+  },
+
+  // Mailboxes (Multi-Account Sending & Rotation)
+  mailboxes: {
+    list: () =>
+      request<Mailbox[]>('/api/v1/mailboxes'),
+    create: (data: MailboxCreate) =>
+      request<Mailbox>('/api/v1/mailboxes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: number, data: Partial<MailboxCreate>) =>
+      request<Mailbox>(`/api/v1/mailboxes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: number) =>
+      request<{ success: boolean; deleted_id: number }>(`/api/v1/mailboxes/${id}`, {
+        method: 'DELETE',
+      }),
+    test: (id: number, toEmail?: string) =>
+      request<{ success: boolean; detail: string; recipient: string; message_id?: string }>(
+        `/api/v1/mailboxes/${id}/test${buildQuery({ to_email: toEmail })}`,
+        { method: 'POST' }
+      ),
   },
 
   // Sequence Templates
@@ -355,6 +386,11 @@ export const api = {
       request<{ success: boolean; detail: string; message_id?: string; recipient?: string }>('/api/v1/settings/test-email', {
         method: 'POST',
         body: JSON.stringify({ to_email: toEmail }),
+      }),
+    toggleLiveMode: (liveMode: boolean) =>
+      request<{ live_mode: boolean; message: string }>('/api/v1/settings/toggle-live-mode', {
+        method: 'POST',
+        body: JSON.stringify({ live_mode: liveMode }),
       }),
   },
 

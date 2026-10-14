@@ -8,11 +8,13 @@ Designed for thoughtful, high-conviction outbound pipeline generation with stric
 
 ## Key Features
 
-- **Safe By Default**: `LIVE_MODE=false` out of the box. Zero network sockets or remote mail servers are contacted until explicitly configured in `.env`.
-- **Ramp-Up Schedule**: Enforces a strict ramp-up curve (5/day up to a maximum hard ceiling of 30/day) with a minimum 180s gap between sends.
+- **Safe By Default**: `LIVE_MODE=false` out of the box. Zero network sockets or remote mail servers are contacted until explicitly toggled.
+- **Interactive Live Mode Toggle**: Easily toggle between `DRY RUN (SAFE)` and `LIVE MODE (ACTIVE)` directly from the dashboard navbar with 1-click safety confirmation. No server restart needed.
+- **Multi-Mailbox Rotation**: Connect multiple sending mailboxes. The system automatically round-robins initial outreach across active accounts, while strictly locking follow-ups to the original contact mailbox for natural conversation continuity.
+- **Multi-Inbox Reply Hub & Notifications**: Inbound replies are auto-captured via IMAP, classified by AI sentiment, and routed to individual mailbox tabs. Real-time topbar notifications alert operators to high-intent replies.
+- **Ramp-Up Schedule**: Enforces a strict ramp-up curve (5/day up to a maximum hard ceiling of 30/day) with a minimum 120s-180s gap between sends.
 - **Human-in-the-Loop Approval Queue**: Every initial outreach email requires an approved, evidence-backed personalized note before dispatch.
-- **Automated Kill-Switch**: Halts sending if the 7-day bounce rate exceeds 2.0%, if 3 bounces occur within 10 sends, or upon spam complaint signals.
-- **Smart Inbox Classifier**: Classifies replies (positive, objection, unsubscribe, auto-reply, bounce) and automatically cancels remaining sequence steps.
+- **Automated Kill-Switch**: Halts sending if the 7-day bounce rate exceeds 2.0% (with small-sample size protection), if 3 bounces occur within 10 sends, or upon spam complaint signals.
 - **Formula & Injection Neutralization**: Neutralizes spreadsheet formula injection (`=`, `@`, `+`, `-`) and scrubs CRLF header injection from lead data.
 - **Self-Diagnostic Doctor**: Built-in CLI command validates system readiness, configuration sanity, and database health.
 
@@ -28,11 +30,13 @@ Designed for thoughtful, high-conviction outbound pipeline generation with stric
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/coldreach.git
-cd coldreach
+git clone https://github.com/Ali-seeker/Email-Marketing-Tool.git
+cd Email-Marketing-Tool
 
-# Install Python dependencies
-uv sync --all-extras
+# Setup virtual environment and dependencies
+python -m venv .venv
+.venv\Scripts\activate   # Windows (.venv/bin/activate on Linux/macOS)
+pip install -r requirements.txt
 
 # Copy environment configuration
 cp .env.example .env
@@ -70,10 +74,10 @@ VITE_API_TOKEN=your_generated_token_from_env
 #### Manual Services
 ```bash
 # Terminal 1: REST API (FastAPI)
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000
 
 # Terminal 2: Background Scheduling Worker
-uv run python -m app.worker
+.venv\Scripts\python.exe -m app.worker
 
 # Terminal 3: Operator Dashboard (Vite + React)
 cd frontend && npm run dev
@@ -88,25 +92,19 @@ API OpenAPI Docs: **`http://127.0.0.1:8000/docs`**
 
 | Variable | Default | Description |
 |---|---|---|
-| `LIVE_MODE` | `false` | Dry-run mode (`false`) stores messages locally without opening sockets. `true` activates real SMTP/IMAP. |
+| `LIVE_MODE` | `false` | Dry-run mode (`false`) stores messages locally without opening sockets. `true` activates real SMTP/IMAP (can also be toggled from the dashboard topbar). |
 | `API_TOKEN` | *(required)* | 32+ char token required in the `X-API-Token` HTTP header for all REST calls. |
 | `DATABASE_URL` | `sqlite:///./data/coldreach.db` | Local SQLite database in WAL mode. |
-| `OUTREACH_START_DATE` | *(required)* | ISO-8601 date (e.g. `2026-11-01`). No sends planned before this date. |
 | `DAILY_SEND_LIMIT` | `30` | Maximum emails per day per mailbox. Hard-capped at 30. |
-| `MIN_GAP_SECONDS` | `180` | Minimum delay between consecutive emails. Hard minimum of 120s. |
-| `SEND_WINDOW_START` | `09:00` | Start of sending window in lead's local timezone. |
-| `SEND_WINDOW_END` | `17:00` | End of sending window in lead's local timezone. |
-| `ALLOWED_SEND_DAYS` | `Tuesday,Wednesday,Thursday` | Allowed outreach days (avoids Mondays and weekends). |
+| `MIN_GAP_SECONDS` | `120` | Minimum delay between consecutive emails. |
+| `BOUNCE_RATE_STOP_THRESHOLD_PERCENT` | `2.0` | Maximum allowable 7-day bounce rate before engaging killswitch. |
 | `SMTP_HOST` | `smtp.gmail.com` | Outbound mail server. |
-| `SMTP_PORT` | `587` | Outbound STARTTLS port. |
-| `SMTP_USER` | *(required in live)* | Outreach mailbox email address. |
-| `SMTP_PASSWORD` | *(required in live)* | Dedicated App Password (never root account password). |
+| `SMTP_PORT` | `465` (SSL) / `587` (TLS) | Outbound SMTP port. |
+| `SMTP_USERNAME` | *(required in live)* | Outreach mailbox email address. |
+| `SMTP_PASSWORD` | *(required in live)* | Dedicated Google/Gmail App Password (16 characters). |
 | `IMAP_HOST` | `imap.gmail.com` | Inbound mail server. |
 | `IMAP_PORT` | `993` | Inbound SSL port. |
-| `SENDER_NAME` | *(required)* | Human display name (e.g., `Alex Miller`). |
-| `SENDER_PHYSICAL_ADDRESS` | *(required)* | Valid physical mailing address for CAN-SPAM/GDPR compliance. |
-| `HUNTER_API_KEY` | *(optional)* | Hunter.io key for enhanced email verification. |
-| `OPENAI_API_KEY` | *(optional)* | OpenAI key for research note drafting. |
+| `IMAP_USER` | *(required in live)* | Inbound mailbox username for reply & bounce monitoring. |
 
 ---
 
@@ -115,39 +113,49 @@ API OpenAPI Docs: **`http://127.0.0.1:8000/docs`**
 ```text
 Morning Review (09:00)
        ↓
-Check Dashboard Health (HEALTHY vs HALTED)
+Check Dashboard Health & Navbar Mode (Dry-Run vs Live)
        ↓
 Open Approval Queue: Review & Approve Drafts
        ↓
-Worker Plans & Sends on Schedule (Respecting Gap & Send Windows)
+Worker Plans & Sends on Schedule (Multi-Mailbox Rotation & Cadence Invariants)
        ↓
-Review Inbox: Engage Positive Replies
+Inbound Replies Alert via Topbar Bell -> Switch Inbox & Review
        ↓
 Evening Run: Execute Automated Database Backup
 ```
 
-### 1. Importing Leads
-1. Navigate to **Leads** -> **Import CSV**.
-2. Select your CSV file containing columns: `email`, `first_name`, `company_name`, `website`, `country`, `timezone`.
-3. The import pipeline executes automatically:
-   - Sanitizes formula injections (`=cmd` -> `'=cmd`).
-   - Deduplicates against existing leads and domain suppresses.
-   - Validates email syntax, disposable domains, and MX records.
-   - Assigns a risk level: `VALID`, `RISKY`, or `INVALID`.
+### 1. Multi-Mailbox Setup
+1. Navigate to **Mailboxes** (`/mailboxes`).
+2. Add your sending accounts with their dedicated SMTP and IMAP credentials.
+3. System will rotate outbound Step 1 messages across all active mailboxes to maintain domain reputation and warm-up pacing.
+4. Follow-up sequences automatically stick to the specific mailbox that initiated contact.
 
-### 2. Working the Approval Queue
-1. Navigate to **Approval Queue**.
-2. Inspect pending Step 1 drafts.
-3. Review the **personal note** and **evidence snippet** found by the research scraper.
-4. If the note is strong, click **Approve**; if weak, edit inline or click **Reject**.
-5. Once approved, the lead is scheduled into the planner queue.
+### 2. Live Mode vs Dry-Run Control
+- Topbar displays an interactive mode badge:
+  - **`○ DRY RUN (SAFE)`**: Emails are safely logged locally to DB without contacting external mail servers.
+  - **`● LIVE MODE (ACTIVE)`**: Real email delivery via SMTP.
+- Click the badge to toggle modes on-the-fly; an alert modal confirms your intent before going live.
 
-### 3. Reading the Dashboard
-- **System Health Banner**: Shows `HEALTHY`, `WARNING`, or `HALTED (KILLSWITCH ENGAGED)` with the active trigger reason.
-- **KPI Metrics**: Total Sent, Delivery Rate, Reply Rate, and 7-day Bounce Rate with safe threshold indicators.
-- **Ramp-Up Visualizer**: Current daily volume versus current tier cap and the 30/day ceiling.
-- **Pipeline Funnel**: Leads Discovered -> Enrolled -> Sent -> Replied -> Won.
-- **Activity Feed**: Real-time event log of sends, bounce detections, and reply classifications.
+### 3. Reviewing Replies & Multi-Inbox Hub
+- When prospects reply, sequence follow-ups for that lead are automatically halted.
+- The **Bell icon** in the top navigation bar displays a badge with recent positive or high-intent responses.
+- In **Replies**, use the account switcher tabs (`All Inboxes` or specific mailboxes) to filter and view conversations.
+- Use **Mark Won** to record converted prospects directly into pipeline analytics.
+
+---
+
+## Inspecting the SQLite Database
+
+All system data (leads, campaigns, mailboxes, messages, settings, replies) is stored in `data/coldreach.db`.
+
+### Method 1: VS Code Extension (Recommended)
+1. Open the Extensions tab in VS Code (`Ctrl + Shift + X`).
+2. Search and install **"SQLite Viewer"** (by Florian Klampfer).
+3. In File Explorer, click directly on `data/coldreach.db` to view and filter tables like Excel spreadsheets.
+
+### Method 2: DB Browser for SQLite (GUI)
+1. Download the free GUI from [sqlitebrowser.org](https://sqlitebrowser.org/).
+2. Open `data/coldreach.db` to browse records, view schemas, and run custom SQL queries.
 
 ---
 
@@ -156,43 +164,38 @@ Evening Run: Execute Automated Database Backup
 ### 1. System Doctor (`doctor`)
 Runs a comprehensive 12-point readiness check:
 ```bash
-uv run python -m app.cli doctor
+.venv\Scripts\python.exe -m app.cli doctor
 ```
 When preparing for production, perform an online connectivity test:
 ```bash
-uv run python -m app.cli doctor --live-check
+.venv\Scripts\python.exe -m app.cli doctor --live-check
 ```
 
 ### 2. Database Backup (`backup`)
 Creates a hot SQLite snapshot into `data/backups/` and automatically prunes snapshots older than 14 runs:
 ```bash
-uv run python -m app.cli backup
+.venv\Scripts\python.exe -m app.cli backup
 ```
 
 ### 3. Single Test Send (`send-test`)
-Sends exactly ONE live email to verify formatting and deliverability (refuses any address registered as a lead):
+Sends exactly ONE live email to verify formatting and deliverability:
 ```bash
-uv run python -m app.cli send-test --to my-qa-address@example.com
+.venv\Scripts\python.exe -m app.cli send-test --to my-qa-address@example.com
 ```
 
 ---
 
 ## Testing & Quality
 
-Run the comprehensive test suite (Unit, Integration, Chaos, and Simulation):
+Run the test suite:
 
 ```bash
 # Windows
 scripts\test.bat
 
-# Linux / macOS
-./scripts/test.sh
+# Or direct pytest
+pytest
 ```
-
-### Test Categories
-- **30-Day Simulation (`tests/e2e/test_simulation.py`)**: Simulates 43,200 virtual minutes with 400 leads across multiple timezones, asserting gap, ramp-up, and cadence invariants on every tick.
-- **Chaos & Resilience (`tests/test_chaos.py`)**: Validates process crash recovery, SQLite locking, SMTP backoffs, backward clock jumps, 50,000-row streaming imports, and CRLF injection defenses.
-- **Security Audit (`tests/test_security.py`)**: Confirms zero secrets in API responses, non-local interface binding guards, and `LIVE_MODE` immutability via API.
 
 ---
 

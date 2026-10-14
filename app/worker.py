@@ -200,25 +200,49 @@ class Worker:
             return self._sender
         return get_sender(db=db)
 
-    def get_inbox_reader(self) -> MailboxReader:
+    def is_live(self, db: Session | None = None) -> bool:
+        """Check whether live sending is active via DB override or .env."""
+        from app.services.sender import is_live_mode_active
+        return is_live_mode_active(db)
+
+    def get_inbox_reader(self, db: Session | None = None) -> MailboxReader:
         """Return configured or injected MailboxReader."""
         if self.inbox_reader is not None:
             return self.inbox_reader
-        if self.settings.LIVE_MODE:
+        if self.is_live(db):
             return ImapReader(settings=self.settings)
         return FakeMailboxReader()
 
     def poll_inbox(self, db: Session, now: datetime) -> tuple[int, dict[str, float]]:
-        """Poll incoming emails, process bounces/replies, and calculate bounce rates."""
+        """Poll incoming emails across all active mailboxes, process bounces/replies, and calculate rates."""
         try:
-            reader = self.get_inbox_reader()
-            new_count, stats = poll_inbox_and_process(
-                reader=reader, db=db, clock=self.clock, notifier=self.notifier
-            )
+            from app.models.mailbox import Mailbox
+
+            active_mbs = db.scalars(select(Mailbox).where(Mailbox.is_active == True)).all()
+            total_new = 0
+            stats: dict[str, float] = {}
+
+            if active_mbs and self.is_live(db):
+                for mb in active_mbs:
+                    try:
+                        reader = ImapReader(settings=self.settings, mailbox=mb)
+                        new_count, st = poll_inbox_and_process(
+                            reader=reader, db=db, clock=self.clock, notifier=self.notifier
+                        )
+                        total_new += new_count
+                        stats.update(st)
+                    except Exception as mb_err:
+                        logger.warning("Inbox poll failed for mailbox %s: %s", mb.email, mb_err)
+            else:
+                reader = self.get_inbox_reader()
+                total_new, stats = poll_inbox_and_process(
+                    reader=reader, db=db, clock=self.clock, notifier=self.notifier
+                )
+
             self._last_inbox_poll = now
             # Recalculate health metrics and enforce safety rules after every inbox poll
             evaluate_and_enforce_safety(db, notifier=self.notifier, clock=self.clock)
-            return new_count, stats
+            return total_new, stats
         except Exception as e:
             logger.warning("Inbox polling transient failure: %s", e)
             self._last_inbox_poll = now
@@ -398,12 +422,29 @@ class Worker:
                 step1_msg_id = step1.message_id
 
         lead_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip() or None
+
+        # Resolve specific sending mailbox
+        from app.models.mailbox import Mailbox
+
+        mb: Mailbox | None = msg.mailbox or lead.mailbox
+        if mb is None and (msg.mailbox_id or lead.mailbox_id):
+            mb = db.get(Mailbox, msg.mailbox_id or lead.mailbox_id)
+
+        if mb:
+            from_email = mb.email
+            from_name = mb.display_name
+            actual_sender = get_sender(db=db, mailbox=mb)
+        else:
+            from_email = msg.from_email or self.settings.SMTP_FROM_EMAIL
+            from_name = self.settings.SMTP_FROM_NAME
+            actual_sender = sender
+
         outgoing = OutgoingMail(
             to_email=lead.email,
             to_name=lead_name,
-            from_email=self.settings.SMTP_FROM_EMAIL,
-            from_name=self.settings.SMTP_FROM_NAME,
-            reply_to=self.settings.SMTP_FROM_EMAIL,
+            from_email=from_email,
+            from_name=from_name,
+            reply_to=from_email,
             subject=msg.subject,
             body=msg.body,
             in_reply_to=step1_msg_id,
@@ -413,11 +454,17 @@ class Worker:
             step=msg.step,
         )
 
-        # 5. Dispatch through sender
-        result = sender.send(outgoing)
+        # 5. Dispatch through resolved sender
+        result = actual_sender.send(outgoing)
 
         # 6. Process SendResult
         if result.success:
+            msg.from_email = from_email
+            if mb:
+                msg.mailbox_id = mb.id
+                if not lead.mailbox_id:
+                    lead.mailbox_id = mb.id
+
             final_status = (
                 EmailMessageStatus.SENT_DRY_RUN.value
                 if result.dry_run

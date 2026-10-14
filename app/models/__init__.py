@@ -5,6 +5,7 @@ from app.models.dns_cache import DomainDnsCache
 from app.models.email_message import EmailMessage, EmailMessageStatus
 from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus, RiskLevel
+from app.models.mailbox import Mailbox
 from app.models.outbox import OutboxEmail
 from app.models.reply import Reply
 from app.models.sequence import SequenceStep
@@ -22,6 +23,7 @@ __all__ = [
     "EventType",
     "Lead",
     "LeadStatus",
+    "Mailbox",
     "RiskLevel",
     "SequenceStep",
     "Setting",

@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage as PyEmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -347,15 +348,40 @@ class SmtpSender(MailSender):
             return SendResult(success=False, error=err_text, error_type=err_type)
 
 
-def get_sender(db: Session | None = None, override_live_mode: bool | None = None) -> MailSender:
-    """Factory creating the appropriate sender according to LIVE_MODE safety setting."""
+def is_live_mode_active(db: Session | None = None) -> bool:
+    """Return whether LIVE_MODE is currently enabled via DB override or .env."""
+    if db is not None:
+        from sqlalchemy import select
+        from app.models.setting import Setting
+        val = db.scalar(select(Setting.value).where(Setting.key == "LIVE_MODE"))
+        if val is not None:
+            return val.strip().lower() in ("true", "1", "yes")
+    return bool(get_settings().LIVE_MODE)
+
+
+def get_sender(
+    db: Session | None = None,
+    override_live_mode: bool | None = None,
+    mailbox: Any | None = None,
+) -> MailSender:
+    """Factory creating the appropriate sender according to LIVE_MODE safety setting and mailbox."""
     cfg = get_settings()
-    is_live = cfg.LIVE_MODE if override_live_mode is None else override_live_mode
+    is_live = is_live_mode_active(db) if override_live_mode is None else override_live_mode
 
     if not is_live:
         return DryRunSender(db=db)
 
-    # Live Mode
+    # 1. If a specific Mailbox instance is passed, use its credentials
+    if mailbox is not None:
+        return SmtpSender(
+            host=mailbox.smtp_host,
+            port=mailbox.smtp_port,
+            username=mailbox.smtp_username,
+            password=mailbox.smtp_password,
+            use_ssl=mailbox.smtp_use_ssl,
+        )
+
+    # 2. Fallback to global config (.env)
     pwd = cfg.SMTP_PASSWORD.get_secret_value() if cfg.SMTP_PASSWORD else None
     return SmtpSender(
         host=cfg.SMTP_HOST,
@@ -364,3 +390,4 @@ def get_sender(db: Session | None = None, override_live_mode: bool | None = None
         password=pwd,
         use_ssl=cfg.SMTP_PORT == 465,
     )
+

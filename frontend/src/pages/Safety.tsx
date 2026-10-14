@@ -541,9 +541,18 @@ export function SafetyPage() {
                 <label className="block font-semibold text-foreground mb-1">
                   Type Acknowledgement Phrase:
                 </label>
-                <p className="text-[11px] text-muted-foreground mb-1">
-                  Type <strong>I ACKNOWLEDGE AND RESUME</strong> exactly to verify you reviewed the bounce/complaint reasons:
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[11px] text-muted-foreground">
+                    Type <strong>I ACKNOWLEDGE AND RESUME</strong> exactly:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setAckText('I ACKNOWLEDGE AND RESUME')}
+                    className="text-primary hover:underline text-[11px] font-semibold cursor-pointer"
+                  >
+                    Click to Auto-Fill
+                  </button>
+                </div>
                 <input
                   type="text"
                   placeholder="I ACKNOWLEDGE AND RESUME"

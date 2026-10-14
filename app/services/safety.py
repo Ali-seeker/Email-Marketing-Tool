@@ -110,15 +110,16 @@ def calculate_health_metrics(db: Session, now: datetime) -> HealthMetrics:
         )
         or 0
     )
-    bounces_7d = (
+    bounces_7d_raw = (
         db.scalar(
-            select(func.count(Event.id)).where(
+            select(func.count(func.distinct(Event.lead_id))).where(
                 Event.created_at >= start_7d,
                 Event.type == EventType.BOUNCED.value,
             )
         )
         or 0
     )
+    bounces_7d = min(sent_7d, bounces_7d_raw)
     bounce_rate_7d = (bounces_7d / sent_7d * 100.0) if sent_7d > 0 else 0.0
 
     # -------------------------------------------------------------------------

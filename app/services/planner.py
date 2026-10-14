@@ -556,6 +556,36 @@ def plan_day(
             last_scheduled_utc = chosen_slot_utc
 
             lead = email_msg.lead or db.get(Lead, email_msg.lead_id)
+
+            # Multi-mailbox round-robin rotation & sticky follow-up enforcement
+            from app.models.mailbox import Mailbox
+
+            active_mbs = db.scalars(
+                select(Mailbox).where(Mailbox.is_active == True).order_by(Mailbox.id.asc())
+            ).all()
+
+            if email_msg.step > 1:
+                # Follow-up: STRICTLY stick to the exact mailbox that reached out first!
+                if lead and lead.mailbox_id:
+                    email_msg.mailbox_id = lead.mailbox_id
+                    mb_record = db.get(Mailbox, lead.mailbox_id)
+                    if mb_record:
+                        email_msg.from_email = mb_record.email
+            else:
+                # Initial outreach (Step 1): Round-robin shuffle across active mailboxes
+                if active_mbs:
+                    if lead and lead.mailbox_id:
+                        email_msg.mailbox_id = lead.mailbox_id
+                        mb_record = db.get(Mailbox, lead.mailbox_id)
+                        if mb_record:
+                            email_msg.from_email = mb_record.email
+                    else:
+                        chosen_mb = active_mbs[len(scheduled_messages) % len(active_mbs)]
+                        email_msg.mailbox_id = chosen_mb.id
+                        email_msg.from_email = chosen_mb.email
+                        if lead:
+                            lead.mailbox_id = chosen_mb.id
+
             if lead and lead.status == LeadStatus.APPROVED.value:
                 lead.status = LeadStatus.IN_SEQUENCE.value
 

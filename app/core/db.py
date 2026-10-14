@@ -161,6 +161,64 @@ def init_db(target_engine: Engine | None = None) -> None:
         except Exception:
             pass
 
+        try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE email_messages ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE email_messages ADD COLUMN from_email VARCHAR(320)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE replies ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+            conn.commit()
+        except Exception:
+            pass
+
+    # Auto-seed default mailbox from .env if mailboxes table is empty
+    with Session(eng) as s:
+        from sqlalchemy import select
+        from app.models.mailbox import Mailbox
+
+        has_any = s.scalar(select(Mailbox).limit(1))
+        if not has_any:
+            cfg = get_settings()
+            if cfg.SMTP_USERNAME and cfg.SMTP_USERNAME != "user@example.com":
+                pwd = cfg.SMTP_PASSWORD.get_secret_value() if cfg.SMTP_PASSWORD else ""
+                imap_pwd = (
+                    cfg.IMAP_APP_PASSWORD.get_secret_value()
+                    if cfg.IMAP_APP_PASSWORD
+                    else pwd
+                )
+                default_box = Mailbox(
+                    email=cfg.SMTP_FROM_EMAIL or cfg.SMTP_USERNAME,
+                    display_name=cfg.SMTP_FROM_NAME or "ColdReach Operator",
+                    smtp_host=cfg.SMTP_HOST,
+                    smtp_port=cfg.SMTP_PORT,
+                    smtp_username=cfg.SMTP_USERNAME,
+                    smtp_password=pwd,
+                    smtp_use_ssl=(cfg.SMTP_PORT == 465),
+                    imap_host=cfg.IMAP_HOST,
+                    imap_port=cfg.IMAP_PORT,
+                    imap_username=cfg.IMAP_USER or cfg.SMTP_USERNAME,
+                    imap_password=imap_pwd,
+                    imap_use_ssl=cfg.IMAP_USE_SSL,
+                    daily_send_cap=cfg.MAX_EMAILS_PER_DAY_PER_MAILBOX or 30,
+                    is_active=True,
+                )
+                s.add(default_box)
+                s.commit()
+
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency provider yielding a scoped database session."""

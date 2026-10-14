@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.campaign import Campaign
     from app.models.email_message import EmailMessage
     from app.models.event import Event
+    from app.models.mailbox import Mailbox
 
 
 class LeadStatus(StrEnum):
@@ -76,6 +77,12 @@ class Lead(Base):
     )
     risk_level: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     validation_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mailbox_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("mailboxes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: system_clock.now(),
@@ -90,6 +97,7 @@ class Lead(Base):
 
     # Relationships
     campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="leads")
+    mailbox: Mapped["Mailbox | None"] = relationship("Mailbox", back_populates="leads")
     emails: Mapped[list["EmailMessage"]] = relationship(
         "EmailMessage",
         back_populates="lead",

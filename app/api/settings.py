@@ -1,6 +1,7 @@
 """System settings inspection and update API endpoints."""
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,11 +10,24 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.schemas import SettingsUpdateRequest, TestEmailRequest
-from app.core.config import get_settings
+from app.core.config import BASE_DIR, get_settings
+from app.core.logging import get_logger
 from app.models.setting import Setting
 from app.services.sender import OutgoingMail, SmtpSender
 
+logger = get_logger(__name__)
+
 router = APIRouter(prefix="/settings", tags=["Settings"])
+
+
+def is_live_mode_active(db: Session | None = None) -> bool:
+    """Return whether LIVE_MODE is currently enabled via DB override or .env."""
+    if db is not None:
+        val = db.scalar(select(Setting.value).where(Setting.key == "LIVE_MODE"))
+        if val is not None:
+            return val.strip().lower() in ("true", "1", "yes")
+    return bool(get_settings().LIVE_MODE)
+
 
 # Strictly whitelisted non-sensitive settings allowed to be inspected and modified
 WHITELISTED_SETTINGS = {
@@ -71,6 +85,7 @@ def get_whitelisted_settings(
             # Fall back to config object attribute
             result[key] = getattr(app_settings, key, None)
 
+    result["LIVE_MODE"] = is_live_mode_active(db)
     return result
 
 
@@ -228,4 +243,53 @@ def send_test_email(
         "message_id": result.message_id,
         "recipient": payload.to_email,
         "detail": f"Test email sent successfully to {payload.to_email} via {host}:{port}",
+    }
+
+
+@router.post("/toggle-live-mode")
+def toggle_live_mode(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Toggle LIVE_MODE vs DRY-RUN safely from the operator desk UI.
+
+    Updates the database Setting override, persists to the .env file,
+    and updates the in-memory runtime configuration.
+    """
+    new_state = bool(payload.get("live_mode", False))
+
+    # 1. Update Database override
+    db.merge(Setting(key="LIVE_MODE", value="true" if new_state else "false"))
+    db.commit()
+
+    # 2. Update .env file on disk if present
+    env_path = BASE_DIR / ".env"
+    if env_path.exists():
+        try:
+            content = env_path.read_text(encoding="utf-8")
+            if re.search(r"^LIVE_MODE=.*$", content, flags=re.MULTILINE):
+                new_content = re.sub(
+                    r"^LIVE_MODE=.*$",
+                    f"LIVE_MODE={'true' if new_state else 'false'}",
+                    content,
+                    flags=re.MULTILINE,
+                )
+            else:
+                new_content = content.rstrip() + f"\nLIVE_MODE={'true' if new_state else 'false'}\n"
+            env_path.write_text(new_content, encoding="utf-8")
+        except Exception as e:
+            logger.warning("Could not persist LIVE_MODE to .env file: %s", e)
+
+    # 3. Clear settings cache and update memory
+    get_settings.cache_clear()
+    cfg = get_settings()
+    cfg.LIVE_MODE = new_state
+
+    return {
+        "live_mode": new_state,
+        "message": (
+            "Activated LIVE mode. Real emails will leave this machine via SMTP."
+            if new_state
+            else "Activated DRY-RUN mode. Outbound emails will remain safely local."
+        ),
     }

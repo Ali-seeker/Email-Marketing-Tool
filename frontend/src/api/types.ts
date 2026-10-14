@@ -91,3 +91,39 @@ export interface PaginatedResult<T> {
   page_size: number
   total_pages: number
 }
+
+export interface Mailbox {
+  id: number
+  email: string
+  display_name: string
+  smtp_host: string
+  smtp_port: number
+  daily_send_cap: number
+  is_active: boolean
+  sent_today: number
+  remaining_today: number
+  created_at: string
+  updated_at: string
+}
+
+export interface MailboxCreate {
+  email: string
+  display_name?: string
+  smtp_host?: string
+  smtp_port?: number
+  smtp_username?: string
+  smtp_password: string
+  imap_host?: string
+  imap_port?: number
+  imap_username?: string
+  imap_password?: string
+  daily_send_cap?: number
+  is_active?: boolean
+}
+
+export interface ReplyInbox {
+  email: string
+  display_name: string
+  replies_count: number
+}
+

@@ -11,6 +11,7 @@ from app.core.db import Base, UTCDateTime
 
 if TYPE_CHECKING:
     from app.models.lead import Lead
+    from app.models.mailbox import Mailbox
 
 
 class EmailMessageStatus(StrEnum):
@@ -75,6 +76,14 @@ class EmailMessage(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     subject_variant_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     body_variant_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mailbox_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("mailboxes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    from_email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
 
     # Relationships
     lead: Mapped["Lead"] = relationship("Lead", back_populates="emails")
+    mailbox: Mapped["Mailbox | None"] = relationship("Mailbox", back_populates="emails")
