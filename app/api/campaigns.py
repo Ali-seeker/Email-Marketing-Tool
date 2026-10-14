@@ -11,6 +11,7 @@ from app.api.schemas import CampaignCreate, CampaignResponse, CampaignUpdate, Pa
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email_message import EmailMessage
 from app.models.lead import Lead, LeadStatus
+from app.services.sequencer import check_and_update_completed_campaigns
 from app.services.templates import load_default_sequence
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
@@ -25,6 +26,9 @@ def list_campaigns(
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[CampaignResponse]:
     """Retrieve paginated list of campaigns with lead counts."""
+    # Check and transition any completed campaigns
+    check_and_update_completed_campaigns(db)
+
     query = select(Campaign)
     if status:
         query = query.where(Campaign.status == status.lower())
@@ -124,6 +128,9 @@ def get_campaign(
     db: Session = Depends(get_db),
 ) -> CampaignResponse:
     """Get single campaign details and summary counts."""
+    # Check and transition if all leads finished
+    check_and_update_completed_campaigns(db, campaign_id=campaign_id)
+
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(
@@ -268,3 +275,39 @@ def get_campaign_schedule(
         }
         for em in emails
     ]
+
+
+@router.post("/{campaign_id}/complete", response_model=CampaignResponse)
+def complete_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+) -> CampaignResponse:
+    """Manually mark an active or paused campaign as completed."""
+    campaign = db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Campaign {campaign_id} not found.",
+        )
+    campaign.status = CampaignStatus.COMPLETED.value
+    db.commit()
+    return get_campaign(campaign_id, db=db)
+
+
+@router.delete("/{campaign_id}")
+def delete_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+) -> dict[str, str | int]:
+    """Delete a campaign and cascade deletion to its sequence steps, leads, and messages."""
+    campaign = db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Campaign {campaign_id} not found.",
+        )
+    name = campaign.name
+    db.delete(campaign)
+    db.commit()
+    return {"status": "deleted", "id": campaign_id, "name": name}
+

@@ -21,6 +21,7 @@ class CampaignStatus(StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     PAUSED = "paused"
+    COMPLETED = "completed"
 
 
 class Campaign(Base):

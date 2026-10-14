@@ -124,6 +124,10 @@ export const api = {
       request<Campaign>(`/api/v1/campaigns/${id}/activate`, { method: 'POST' }),
     schedule: (id: number) =>
       request<CampaignScheduleItem[]>(`/api/v1/campaigns/${id}/schedule`),
+    complete: (id: number) =>
+      request<Campaign>(`/api/v1/campaigns/${id}/complete`, { method: 'POST' }),
+    delete: (id: number) =>
+      request<{ status: string; id: number; name: string }>(`/api/v1/campaigns/${id}`, { method: 'DELETE' }),
   },
 
   // Leads Endpoints

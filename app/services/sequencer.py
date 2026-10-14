@@ -12,7 +12,7 @@ Implements strict sequence progression and safety guarantees:
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import Clock, system_clock
@@ -544,6 +544,97 @@ def check_completed_leads(
 
     db.commit()
     return completed_leads
+
+
+def check_and_update_completed_campaigns(
+    db: Session,
+    clock: Clock | None = None,
+    campaign_id: int | None = None,
+) -> list[Campaign]:
+    """Inspect active or paused campaigns and automatically mark them as COMPLETED
+
+    when all leads in the campaign have finished their sequences.
+
+    A campaign is considered complete when:
+    1. total_leads > 0 (it has at least 1 lead)
+    2. Zero leads remain in incomplete statuses:
+       ['new', 'valid', 'personalized', 'approved', 'needs_manual_note', 'in_sequence', 'paused'].
+       (All leads are in terminal states: ['completed', 'replied', 'bounced', 'unsubscribed', 'won', 'invalid']).
+    3. Zero emails remain in pending states:
+       ['scheduled', 'draft', 'needs_review', 'approved', 'sending'].
+    """
+    clk = clock or system_clock
+    now = clk.now()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+
+    stmt = select(Campaign).where(
+        Campaign.status.in_([CampaignStatus.ACTIVE.value, CampaignStatus.PAUSED.value])
+    )
+    if campaign_id is not None:
+        stmt = stmt.where(Campaign.id == campaign_id)
+
+    candidates = db.scalars(stmt).all()
+    completed: list[Campaign] = []
+
+    incomplete_lead_statuses = [
+        LeadStatus.NEW.value,
+        LeadStatus.VALID.value,
+        LeadStatus.PERSONALIZED.value,
+        LeadStatus.APPROVED.value,
+        LeadStatus.NEEDS_MANUAL_NOTE.value,
+        LeadStatus.IN_SEQUENCE.value,
+        LeadStatus.PAUSED.value,
+    ]
+
+    pending_email_statuses = [
+        EmailMessageStatus.SCHEDULED.value,
+        EmailMessageStatus.DRAFT.value,
+        EmailMessageStatus.NEEDS_REVIEW.value,
+        EmailMessageStatus.APPROVED.value,
+        EmailMessageStatus.SENDING.value,
+    ]
+
+    for campaign in candidates:
+        total_leads = db.scalar(
+            select(func.count(Lead.id)).where(Lead.campaign_id == campaign.id)
+        ) or 0
+        if total_leads == 0:
+            continue
+
+        incomplete_count = db.scalar(
+            select(func.count(Lead.id)).where(
+                Lead.campaign_id == campaign.id,
+                Lead.status.in_(incomplete_lead_statuses),
+            )
+        ) or 0
+        if incomplete_count > 0:
+            continue
+
+        pending_emails_count = db.scalar(
+            select(func.count(EmailMessage.id))
+            .join(Lead, Lead.id == EmailMessage.lead_id)
+            .where(
+                Lead.campaign_id == campaign.id,
+                EmailMessage.status.in_(pending_email_statuses),
+            )
+        ) or 0
+        if pending_emails_count > 0:
+            continue
+
+        campaign.status = CampaignStatus.COMPLETED.value
+        completed.append(campaign)
+        logger.info(
+            "Campaign #%d ('%s') automatically marked as COMPLETED: all %d leads finished sequence.",
+            campaign.id,
+            campaign.name,
+            total_leads,
+        )
+
+    if completed:
+        db.commit()
+
+    return completed
 
 
 # =========================================================================

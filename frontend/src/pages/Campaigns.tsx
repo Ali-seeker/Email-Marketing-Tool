@@ -16,6 +16,10 @@ import {
   ChevronDown,
   ChevronUp,
   Upload,
+  Trash2,
+  CheckCircle2,
+  CheckCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/api/client'
 import type { Campaign, PlannedEmailItem, CampaignScheduleItem } from '@/api/types'
@@ -27,6 +31,7 @@ export function CampaignsPage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [expandedScheduleCampId, setExpandedScheduleCampId] = useState<number | null>(null)
+  const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null)
 
   // 1. Fetch Campaigns List
   const {
@@ -85,6 +90,40 @@ export function CampaignsPage() {
     },
     onError: (err: any) => {
       toast({ title: 'Resume Failed', message: err.message, type: 'error' })
+    },
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: (id: number) => api.campaigns.complete(id),
+    onSuccess: (data) => {
+      toast({
+        title: 'Campaign Completed',
+        message: `"${data.name}" ko completed mark kar diya gaya hai.`,
+        type: 'success',
+      })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['planPreview'] })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Action Failed', message: err.message, type: 'error' })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.campaigns.delete(id),
+    onSuccess: (data) => {
+      toast({
+        title: 'Campaign Deleted',
+        message: `"${data.name}" campaign successfully remove ho gayi hai.`,
+        type: 'info',
+      })
+      setCampaignToDelete(null)
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['planPreview'] })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Delete Failed', message: err.message, type: 'error' })
     },
   })
 
@@ -202,6 +241,7 @@ export function CampaignsPage() {
             {campaigns.map((camp) => {
               const isActive = camp.status === 'active'
               const isPaused = camp.status === 'paused'
+              const isCompleted = camp.status === 'completed'
 
               return (
                 <div
@@ -209,35 +249,72 @@ export function CampaignsPage() {
                   className="bg-card border border-border rounded-lg p-4 space-y-3 transition-shadow hover:shadow-xs"
                 >
                   {/* Card Header: Title & Campaign State Control */}
-                  <div className="flex items-center justify-between gap-3 border-b border-border/50 pb-3">
+                  <div className="flex items-center justify-between gap-3 border-b border-border/50 pb-3 flex-wrap">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className="text-base font-bold text-foreground truncate">{camp.name}</span>
                       <StatusChip
                         status={camp.status}
-                        variant={isActive ? 'success' : isPaused ? 'warning' : 'neutral'}
+                        variant={isCompleted ? 'success' : isActive ? 'success' : isPaused ? 'warning' : 'neutral'}
                       />
                     </div>
 
-                    {/* Campaign Master Toggle */}
-                    <div className="shrink-0">
-                      {isActive ? (
-                        <button
-                          type="button"
-                          disabled={pauseMutation.isPending}
-                          onClick={() => pauseMutation.mutate(camp.id)}
-                          className="px-3 py-1.5 text-xs font-semibold border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <Pause className="w-3.5 h-3.5" /> Pause Campaign
-                        </button>
+                    {/* Campaign Master Toggle & Action Buttons */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isCompleted ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-md flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> All Outreach Done
+                          </span>
+                          <button
+                            type="button"
+                            disabled={resumeMutation.isPending}
+                            onClick={() => resumeMutation.mutate(camp.id)}
+                            className="px-2.5 py-1 text-xs font-medium border border-border hover:bg-muted text-foreground rounded-md transition-colors cursor-pointer"
+                            title="Re-open / Resume campaign"
+                          >
+                            Reactivate
+                          </button>
+                        </div>
+                      ) : isActive ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={pauseMutation.isPending}
+                            onClick={() => pauseMutation.mutate(camp.id)}
+                            className="px-3 py-1.5 text-xs font-semibold border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Pause className="w-3.5 h-3.5" /> Pause Campaign
+                          </button>
+                          <button
+                            type="button"
+                            disabled={completeMutation.isPending}
+                            onClick={() => completeMutation.mutate(camp.id)}
+                            className="px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-muted text-foreground rounded-md flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Mark campaign as complete"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Complete
+                          </button>
+                        </>
                       ) : isPaused ? (
-                        <button
-                          type="button"
-                          disabled={resumeMutation.isPending}
-                          onClick={() => resumeMutation.mutate(camp.id)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                        >
-                          <Play className="w-3.5 h-3.5" /> Resume Campaign
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            disabled={resumeMutation.isPending}
+                            onClick={() => resumeMutation.mutate(camp.id)}
+                            className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                          >
+                            <Play className="w-3.5 h-3.5" /> Resume Campaign
+                          </button>
+                          <button
+                            type="button"
+                            disabled={completeMutation.isPending}
+                            onClick={() => completeMutation.mutate(camp.id)}
+                            className="px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-muted text-foreground rounded-md flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Mark campaign as complete"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Complete
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"
@@ -248,6 +325,16 @@ export function CampaignsPage() {
                           <Play className="w-3.5 h-3.5" /> Activate Campaign
                         </button>
                       )}
+
+                      {/* Delete Campaign Button */}
+                      <button
+                        type="button"
+                        onClick={() => setCampaignToDelete(camp)}
+                        className="p-1.5 text-xs font-medium border border-border rounded-md hover:border-rose-500/40 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 transition-colors cursor-pointer"
+                        title={`Delete Campaign "${camp.name}"`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
@@ -400,6 +487,65 @@ export function CampaignsPage() {
           </div>
         )}
       </div>
+
+      {/* Delete Campaign Confirmation Modal */}
+      {campaignToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="bg-card border border-border w-full max-w-md rounded-xl shadow-2xl p-5 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-foreground">
+                  Delete Campaign "{campaignToDelete.name}"?
+                </h3>
+                <p className="text-xs text-muted-foreground">Permanent deletion confirmation</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-800 dark:text-rose-300 space-y-1.5">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" /> Irreversible Action
+              </p>
+              <p>
+                Is campaign ke tamaam leads (<strong>{campaignToDelete.leads_count ?? 0} leads</strong>), unke sequence schedule aur emails permanently delete ho jayenge.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                disabled={deleteMutation.isPending}
+                onClick={() => setCampaignToDelete(null)}
+                className="px-3 py-1.5 text-xs font-medium border border-border hover:bg-muted text-foreground rounded-md transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(campaignToDelete.id)}
+                className="px-4 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

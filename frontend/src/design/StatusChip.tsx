@@ -53,6 +53,7 @@ export function StatusChip({
     case 'running':
     case 'healthy':
     case 'active':
+    case 'completed':
     case 'ok':
       detectedVariant = variant || 'success'
       if (normalized === 'won') IconComponent = Trophy

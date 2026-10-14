@@ -60,6 +60,7 @@ from app.services.sender import (
 )
 from app.services.sequencer import (
     can_send,
+    check_and_update_completed_campaigns,
     check_completed_leads,
     on_email_sent,
 )
@@ -623,6 +624,8 @@ class Worker:
 
             # 2. Check for sequence completion (Step 4 sent > 7 days ago with no reply)
             check_completed_leads(db, clock=self.clock)
+            # Check for campaign completion (all leads finished & no pending emails)
+            check_and_update_completed_campaigns(db, clock=self.clock)
 
             # 3. Check global killswitch
             if is_killswitch_active(db):
