@@ -1,0 +1,33 @@
+email,first_name,last_name,company,title,website,country,personal_note
+alihussnainpak2020@gmail.com,Ali,Hussnain,Apex Digital,Founder,https://apexdigital.pk,Pakistan,Loved your recent case study on outbound pipeline scaling.
+alihussnainpak2023@gmail.com,Ali,Hussnain,CloudPeak AI,Product Lead,,Pakistan,Great seeing CloudPeak expand its AI capabilities this month.
+saimpak2023@gmail.com,Saim,Khan,DevVibe Studio,Tech Lead,https://devvibe.io,Pakistan,Impressed by your team's open source contributions.
+anwarpak2023@gmail.com,Anwar,Hussain,GrowthWave,Operations,,United States,Followed your updates on LinkedIn regarding business automation.
+medbook.noreply@gmail.com,MedBook,Team,MedBook Health,Director,https://medbook.co.uk,United Kingdom,Excited about your upcoming health tech platform launch.
+   hamza.lead2026@GMAIL.COM   ,Hamza,Tariq,NextGen AI,Founder,https://nextgen.ai,Canada,Great demo shared at the recent AI developer conference.
+dr.smith@example.com,François-Xavier,O'Connor-Smith,L'Oréal Tech & Co.,VP Engineering,https://loreal.com,France,Appreciated your keynote on sustainable beauty tech.
+security.audit@example.com,=cmd|' /C calc'!A0,Injection Tester,@import malicious,Security Lead,,Germany,-100*20+SUM(A1:A5) Formula sanitization test
+support@github.com,GitHub,Support,GitHub Inc,Support Team,https://github.com,United States,Checking role-based mailbox safety handling.
+mark.executive@uber.com,Mark,Evans,Corporate Corp,VP Sales,https://airbnb.com,United States,Testing corporate domain to website mismatch check.
+prospect.john@gmial.com,John,Miller,Miller Logistics,CEO,https://miller.com,United States,Testing typo domain detection for gmial.com.
+client.sarah@yaho.com,Sarah,Jenkins,Jenkins Media,Director,https://jenkins.com,United States,Testing typo domain detection for yaho.com.
+temp.burner@mailinator.com,Temp,Burner,Trash Domain Ltd,Tester,,United States,Testing disposable temporary domain detector.
+ghost.lead@nonexistentfake998877.org,Ghost,User,Dead Domain Inc,Founder,,United States,Testing DNS MX resolution failure on non-existent domain.
+lead.buyer@gamil.com,Zack,Taylor,Taylor Retail,Purchasing Lead,https://taylorretail.com,United States,Testing typo detection for gamil.com.
+hr.manager@hotmial.com,Rachel,Green,Central Perks,HR Manager,https://centralperks.com,United States,Testing typo detection for hotmial.com.
+partner.vp@outlok.com,David,Brown,Brown Logistics,VP Partnerships,https://brownlogistics.com,United States,Testing typo detection for outlok.com.
+investor.deal@gmail.con,Victor,Krum,Krum Capital,Managing Partner,https://krumcap.com,United States,Testing typo detection for gmail.con.
+temp.lead@10minutemail.com,Alice,Disposable,Quick Burn Inc,Tester,,United States,Testing 10minutemail disposable filter.
+trash.lead@guerrillamail.com,Bob,Guerrilla,Throwaway Corp,Tester,,United States,Testing guerrillamail disposable filter.
+burner.lead@sharklasers.com,Charlie,Shark,Laser Burner Co,Tester,,United States,Testing sharklasers disposable filter.
+billing@stripe.com,Stripe,Billing,Stripe Inc,Finance Lead,https://stripe.com,United States,Testing role-based mailbox check for billing.
+jobs@netflix.com,Netflix,Recruiting,Netflix Inc,Talent Acquisition,https://netflix.com,United States,Testing role-based mailbox check for jobs.
+info@canva.com,Canva,General,Canva Pty Ltd,Info Desk,https://canva.com,Australia,Testing role-based mailbox check for info.
+tim.cook@apple.com,Tim,Cook,Tech Giant,Executive,https://samsung.com,United States,Testing corporate domain vs website mismatch.
+sarah.ceo@domainneverregistered1234567.com,Sarah,Nonexistent,Ghost Holdings,CEO,,United States,Testing DNS MX record absence on dead domain.
+john.lead@fakeghostcompany991122.net,John,Phantom,Phantom Solutions,Founder,,United States,Testing DNS resolution failure on nonexistent net domain.
+qa.tester@example.org,QA,Tester,RFC Example Org,QA Lead,https://example.org,United States,Testing RFC 2606 example.org rejection.
+dev.admin@test.com,Dev,Admin,Test Reserved,Engineer,https://test.com,United States,Testing RFC 2606 test.com rejection.
+alihussnainpak2020@gmail.com,Ali,Hussnain,Duplicate Entry,Founder,https://apexdigital.pk,Pakistan,Duplicate row to test in-file deduplication.
+missing_at_symbol.com,Broken,Syntax,Malformed Corp,Tester,,United States,Testing syntax rejection for missing at sign.
+space in email@domain.com,Space,Tester,Space Format Inc,Tester,,United States,Testing syntax rejection for space inside email.

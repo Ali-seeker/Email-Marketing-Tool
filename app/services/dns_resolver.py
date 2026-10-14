@@ -54,6 +54,7 @@ class LiveDnsResolver(DnsResolver):
         resolver.lifetime = self.timeout
 
         has_mx = False
+        has_null_mx = False
         has_a = False
         records: list[str] = []
 
@@ -61,8 +62,15 @@ class LiveDnsResolver(DnsResolver):
         try:
             mx_answers = resolver.resolve(domain, "MX")
             for rdata in mx_answers:
-                has_mx = True
-                records.append(f"MX: {rdata.exchange.to_text()} (priority {rdata.preference})")
+                raw_exchange = rdata.exchange.to_text().strip()
+                cleaned_exchange = raw_exchange.rstrip(".")
+                if not cleaned_exchange or raw_exchange == ".":
+                    # RFC 7505 Null MX ("MX 0 .") explicitly declares domain accepts NO mail
+                    has_null_mx = True
+                    records.append(f"Null MX: . (priority {rdata.preference}) - Domain accepts no email")
+                else:
+                    has_mx = True
+                    records.append(f"MX: {raw_exchange} (priority {rdata.preference})")
         except (
             dns.resolver.NoAnswer,
             dns.resolver.NXDOMAIN,
@@ -71,21 +79,22 @@ class LiveDnsResolver(DnsResolver):
         ) as err:
             logger.debug("MX lookup failed for %s: %s", domain, err)
 
-        # 2. Check A records (fallback per RFC 5321)
-        try:
-            a_answers = resolver.resolve(domain, "A")
-            for rdata in a_answers:
-                has_a = True
-                records.append(f"A: {rdata.address}")
-        except (
-            dns.resolver.NoAnswer,
-            dns.resolver.NXDOMAIN,
-            dns.exception.Timeout,
-            Exception,
-        ) as err:
-            logger.debug("A lookup failed for %s: %s", domain, err)
+        # 2. Check A records fallback (RFC 5321 specifies A fallback ONLY when NO MX exists at all, NEVER on Null MX)
+        if not has_null_mx:
+            try:
+                a_answers = resolver.resolve(domain, "A")
+                for rdata in a_answers:
+                    has_a = True
+                    records.append(f"A: {rdata.address}")
+            except (
+                dns.resolver.NoAnswer,
+                dns.resolver.NXDOMAIN,
+                dns.exception.Timeout,
+                Exception,
+            ) as err:
+                logger.debug("A lookup failed for %s: %s", domain, err)
 
-        is_valid = has_mx or has_a
+        is_valid = has_mx or (has_a and not has_null_mx)
         return DnsResult(
             domain=domain,
             has_mx=has_mx,

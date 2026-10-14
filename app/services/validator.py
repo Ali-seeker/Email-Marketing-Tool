@@ -94,6 +94,19 @@ def _load_disposable_domains() -> set[str]:
 
 DISPOSABLE_DOMAINS = _load_disposable_domains()
 
+# RFC 2606 / RFC 6761 reserved documentation and test domains (never accept email)
+RESERVED_TEST_DOMAINS: frozenset[str] = frozenset(
+    [
+        "example.com",
+        "example.org",
+        "example.net",
+        "example.edu",
+        "test.com",
+        "invalid",
+        "localhost",
+    ]
+)
+
 # Common misspelled / typosquatting domains of major email providers
 COMMON_TYPO_DOMAINS: dict[str, str] = {
     # Gmail typos
@@ -237,7 +250,11 @@ def evaluate_email(
     if domain in DISPOSABLE_DOMAINS:
         return RiskLevel.BAD.value, f"Disposable email domain: {domain}"
 
-    # 2b. Known typo / misspelled domain check (protects against high bounce rates and typosquatting)
+    # 2b. Reserved documentation/test domains (RFC 2606)
+    if domain in RESERVED_TEST_DOMAINS:
+        return RiskLevel.BAD.value, f"Reserved example/test domain: {domain} (RFC 2606)"
+
+    # 2c. Known typo / misspelled domain check (protects against high bounce rates and typosquatting)
     if domain in COMMON_TYPO_DOMAINS:
         intended = COMMON_TYPO_DOMAINS[domain]
         return (
