@@ -618,14 +618,28 @@ def realign_scheduled_emails(
     window_start_time, window_end_time = get_send_window(db)
     min_gap_sec = int(get_setting(db, "MIN_GAP_SECONDS", default=120))
 
-    scheduled_msgs = db.scalars(
+    raw_msgs = db.scalars(
         select(EmailMessage)
         .where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
-        .order_by(EmailMessage.scheduled_at.asc(), EmailMessage.id.asc())
     ).all()
 
-    if not scheduled_msgs:
+    if not raw_msgs:
         return 0
+
+    def _earliest_window_utc(m: EmailMessage) -> datetime:
+        lead_obj = m.lead or db.get(Lead, m.lead_id)
+        if not lead_obj or not lead_obj.timezone or not lead_obj.timezone.strip():
+            ltz = mailbox_tz
+        else:
+            try:
+                ltz = ZoneInfo(lead_obj.timezone.strip())
+            except Exception:
+                ltz = mailbox_tz
+        local_date = now_utc.astimezone(ltz).date()
+        cand = datetime.combine(local_date, window_start_time, tzinfo=ltz).astimezone(UTC)
+        return max(now_utc, cand)
+
+    scheduled_msgs = sorted(raw_msgs, key=_earliest_window_utc)
 
     realigned_count = 0
     last_scheduled_utc: datetime | None = None
@@ -644,20 +658,7 @@ def realign_scheduled_emails(
             except Exception:
                 lead_tz = mailbox_tz
 
-        # Check if current scheduled_at is already compliant
-        current_dt = msg.scheduled_at
-        if current_dt is not None:
-            if current_dt.tzinfo is None:
-                current_dt = current_dt.replace(tzinfo=UTC)
-            local_dt = current_dt.astimezone(lead_tz)
-            is_valid_day = local_dt.weekday() in allowed_weekdays
-            is_valid_time = window_start_time <= local_dt.time() <= window_end_time
-            is_future = current_dt >= now_utc
-            if is_valid_day and is_valid_time and is_future:
-                last_scheduled_utc = current_dt
-                continue
-
-        # Find the next valid slot for this lead
+        # Find the earliest valid slot for this lead starting from now
         start_date = now_utc.astimezone(lead_tz).date()
         earliest_possible_utc = now_utc
         if last_scheduled_utc is not None:
