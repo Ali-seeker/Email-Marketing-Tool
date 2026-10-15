@@ -50,6 +50,8 @@ export function MailboxesPage() {
       })
       setIsAddModalOpen(false)
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      queryClient.invalidateQueries({ queryKey: ['planningCapacity'] })
+      queryClient.invalidateQueries({ queryKey: ['dailyCapacity'] })
     },
     onError: (err: any) => {
       toast({
@@ -67,6 +69,8 @@ export function MailboxesPage() {
       toast({ title: 'Mailbox Updated', type: 'info' })
       setEditingMailbox(null)
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      queryClient.invalidateQueries({ queryKey: ['planningCapacity'] })
+      queryClient.invalidateQueries({ queryKey: ['dailyCapacity'] })
     },
     onError: (err: any) => {
       toast({ title: 'Update Failed', message: err.message, type: 'error' })
@@ -78,6 +82,8 @@ export function MailboxesPage() {
     onSuccess: () => {
       toast({ title: 'Mailbox Removed', type: 'info' })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      queryClient.invalidateQueries({ queryKey: ['planningCapacity'] })
+      queryClient.invalidateQueries({ queryKey: ['dailyCapacity'] })
     },
     onError: (err: any) => {
       toast({ title: 'Delete Failed', message: err.message, type: 'error' })

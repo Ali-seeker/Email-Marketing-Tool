@@ -117,19 +117,9 @@ def recover_stuck_sending_messages(db: Session, clock: Clock) -> int:
 def get_daily_send_cap(db: Session, target_date: date) -> int:
     """Calculate maximum allowable dispatches for target_date.
 
-    Clamped unconditionally by HARD_MAX_LIMIT (30).
+    If active mailboxes are configured, uses their collective daily_send_cap.
+    Otherwise falls back to ramp-up cap / HARD_MAX_PER_DAY.
     """
-    start_date = get_outreach_start_date(db)
-    if target_date < start_date:
-        return 0
-
-    configured_max = get_setting(db, "HARD_MAX_PER_DAY", default=HARD_MAX_LIMIT)
-    try:
-        configured_max_int = int(configured_max)
-    except Exception:
-        configured_max_int = HARD_MAX_LIMIT
-    hard_limit = min(configured_max_int, HARD_MAX_LIMIT)
-
     # Optional test/operator bypass flag for dry-run capacity checks
     ignore_ramp_up = str(get_setting(db, "IGNORE_RAMP_UP", default="false")).lower() in (
         "true",
@@ -137,15 +127,11 @@ def get_daily_send_cap(db: Session, target_date: date) -> int:
         "yes",
     )
     if ignore_ramp_up:
-        return hard_limit
+        return 9999
 
-    base_cap = get_ramp_up_cap(target_date, start_date)
-    final_cap = min(base_cap, hard_limit)
+    from app.services.planner import get_effective_daily_cap
 
-    if is_cap_halved_from_resume(db, target_date):
-        final_cap = max(1, final_cap // 2)
-
-    return final_cap
+    return get_effective_daily_cap(db, target_date)
 
 
 def get_sent_today_count(db: Session, today_date: date, mailbox_tz: ZoneInfo) -> int:
@@ -236,7 +222,7 @@ class Worker:
                     except Exception as mb_err:
                         logger.warning("Inbox poll failed for mailbox %s: %s", mb.email, mb_err)
             else:
-                reader = self.get_inbox_reader()
+                reader = self.get_inbox_reader(db)
                 total_new, stats = poll_inbox_and_process(
                     reader=reader, db=db, clock=self.clock, notifier=self.notifier
                 )

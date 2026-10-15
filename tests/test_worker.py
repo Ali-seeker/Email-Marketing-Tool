@@ -43,6 +43,7 @@ def worker_db() -> tuple[Session, sessionmaker]:
 
         # Settings
         session.add(Setting(key="OUTREACH_START_DATE", value="2026-11-01"))
+        session.add(Setting(key="LIVE_MODE", value="false"))
         session.add(Setting(key="MAILBOX_TZ", value="America/New_York"))
         session.add(Setting(key="HARD_MAX_PER_DAY", value="30"))
         session.add(Setting(key="MIN_GAP_SECONDS", value="120"))

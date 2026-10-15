@@ -302,14 +302,48 @@ def due_emails(
             actual_db.close()
 
 
+def get_effective_daily_cap(db: Session, target_date: date) -> int:
+    """Calculate maximum allowable dispatches for target_date.
+
+    If active mailboxes are configured, the system daily limit is the collective sum
+    of all active mailboxes' daily_send_cap.
+    Otherwise, falls back to ramp-up cap / HARD_MAX_PER_DAY.
+    """
+    from app.models.mailbox import Mailbox
+
+    active_mbs = db.scalars(
+        select(Mailbox).where(Mailbox.is_active == True)
+    ).all()
+
+    if active_mbs:
+        total_cap = sum(mb.daily_send_cap for mb in active_mbs if mb.daily_send_cap > 0)
+    else:
+        start_date = get_outreach_start_date(db)
+        if target_date < start_date:
+            return 0
+        base_cap = get_ramp_up_cap(target_date, start_date)
+        configured_max = get_setting(db, "HARD_MAX_PER_DAY", default=HARD_MAX_LIMIT)
+        try:
+            configured_max_int = int(configured_max)
+        except Exception:
+            configured_max_int = HARD_MAX_LIMIT
+        total_cap = min(base_cap, configured_max_int, HARD_MAX_LIMIT)
+
+    from app.services.safety import is_cap_halved_from_resume
+
+    if is_cap_halved_from_resume(db, target_date):
+        total_cap = max(1, total_cap // 2)
+
+    return total_cap
+
+
 def daily_capacity(
     target_date: date | str,
     db: Session | None = None,
 ) -> int:
     """Calculate remaining sending capacity for target date in mailbox timezone.
 
-    Remaining capacity = ramp-up cap for that date minus emails already sent or scheduled that day,
-    never exceeding HARD_MAX_PER_DAY (30).
+    Remaining capacity = effective daily cap for that date minus emails already sent or scheduled that day.
     """
     if isinstance(target_date, str):
         target_date = date.fromisoformat(target_date.strip())
@@ -324,21 +358,7 @@ def daily_capacity(
         if target_date < start_date:
             return 0
 
-        base_cap = get_ramp_up_cap(target_date, start_date)
-
-        # Check configurable hard max override, clamped unconditionally at 30
-        configured_max = get_setting(db, "HARD_MAX_PER_DAY", default=HARD_MAX_LIMIT)
-        try:
-            configured_max_int = int(configured_max)
-        except Exception:
-            configured_max_int = HARD_MAX_LIMIT
-
-        effective_cap = min(base_cap, configured_max_int, HARD_MAX_LIMIT)
-
-        from app.services.safety import is_cap_halved_from_resume
-
-        if is_cap_halved_from_resume(db, target_date):
-            effective_cap = max(1, effective_cap // 2)
+        effective_cap = get_effective_daily_cap(db, target_date)
 
         # Count emails already sent or scheduled on target_date in operator's mailbox timezone
         mailbox_tz = get_mailbox_tz(db)
@@ -376,7 +396,7 @@ def daily_capacity(
                 used_count += 1
 
         remaining = max(0, effective_cap - used_count)
-        return min(remaining, HARD_MAX_LIMIT)
+        return remaining
     finally:
         if close_session_on_exit:
             db.close()

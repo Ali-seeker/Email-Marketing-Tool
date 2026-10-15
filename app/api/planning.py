@@ -113,21 +113,11 @@ def get_capacity(
 
     rem_cap = daily_capacity(parsed_date, db=db)
 
-    # Compute total cap for the day
-    from app.services.planner import get_outreach_start_date, get_ramp_up_cap, get_setting
+    # Compute total cap for the day (collective mailbox caps or ramp-up fallback)
+    from app.services.planner import get_effective_daily_cap
 
-    start_date = get_outreach_start_date(db)
-    base_cap = get_ramp_up_cap(parsed_date, start_date)
-    configured_max = get_setting(db, "HARD_MAX_PER_DAY", default=30)
-    try:
-        configured_max_int = int(configured_max)
-    except Exception:
-        configured_max_int = 30
-    total_cap = min(base_cap, configured_max_int, 30)
+    total_cap = get_effective_daily_cap(db, parsed_date)
     halved = is_cap_halved_from_resume(db, target_date=parsed_date, clock=clock)
-    if halved:
-        total_cap = max(1, total_cap // 2)
-
     sent_or_planned = max(0, total_cap - rem_cap)
 
     return CapacityResponse(
