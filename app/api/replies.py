@@ -29,7 +29,28 @@ def list_replies(
     query = select(Reply)
 
     if classification:
-        query = query.where(Reply.classification == classification.lower())
+        clean_cls = classification.strip().lower()
+        if clean_cls in ("positive", "reply_positive_hint", "positive_hint"):
+            query = query.where(
+                (Reply.classification == "reply_positive_hint")
+                | (Reply.classification == "positive")
+                | (Reply.is_positive_hint.is_(True))
+            )
+        elif clean_cls in ("other", "reply_other", "general"):
+            query = query.where(
+                (Reply.classification.in_(["reply_other", "other", "general"]))
+                & (Reply.is_positive_hint.is_(False))
+            )
+        elif clean_cls in ("out_of_office", "auto_reply", "ooo"):
+            query = query.where(Reply.classification.in_(["auto_reply", "out_of_office", "ooo"]))
+        elif clean_cls in ("unsubscribe", "opt_out"):
+            query = query.where(Reply.classification.in_(["unsubscribe", "opt_out"]))
+        elif clean_cls in ("question", "information"):
+            query = query.where(Reply.classification.in_(["question", "information"]))
+        elif clean_cls in ("not_interested", "negative"):
+            query = query.where(Reply.classification.in_(["not_interested", "negative"]))
+        else:
+            query = query.where(Reply.classification == clean_cls)
     if is_positive_hint is not None:
         query = query.where(Reply.is_positive_hint == is_positive_hint)
     if lead_id is not None:
@@ -58,6 +79,7 @@ def list_replies(
 
 
 @router.post("/{reply_id}/handle", response_model=ReplyResponse)
+@router.post("/{reply_id}/mark-handled", response_model=ReplyResponse)
 def handle_reply(
     reply_id: int,
     db: Session = Depends(get_db),
@@ -92,27 +114,47 @@ def mark_reply_won(
 ) -> ReplyResponse:
     """Mark lead associated with this reply as won customer."""
     reply = db.get(Reply, reply_id)
+    target_lead: Lead | None = None
+    if reply:
+        if reply.lead_id:
+            target_lead = db.get(Lead, reply.lead_id)
+    else:
+        # Check if caller passed lead_id directly
+        target_lead = db.get(Lead, reply_id)
+        if not target_lead:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Reply or Lead {reply_id} not found.",
+            )
+        reply = db.scalars(select(Reply).where(Reply.lead_id == target_lead.id)).first()
+
+    if target_lead:
+        target_lead.status = LeadStatus.WON.value
+        target_lead.updated_at = clock.now()
+        db.add(
+            Event(
+                lead_id=target_lead.id,
+                type="lead_won",
+                payload={"action": "mark_won", "reply_id": reply.id if reply else None},
+                created_at=clock.now(),
+            )
+        )
+        db.commit()
+
     if not reply:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Reply {reply_id} not found.",
+        return ReplyResponse(
+            id=reply_id,
+            lead_id=target_lead.id if target_lead else None,
+            from_email=target_lead.email if target_lead else "lead@example.com",
+            subject="Won",
+            body="",
+            snippet="",
+            classification="positive",
+            is_positive_hint=True,
+            created_at=clock.now(),
         )
 
-    if reply.lead_id:
-        lead = db.get(Lead, reply.lead_id)
-        if lead:
-            lead.status = LeadStatus.WON.value
-            lead.updated_at = clock.now()
-            db.add(
-                Event(
-                    lead_id=lead.id,
-                    type="lead_won",
-                    payload={"reply_id": reply.id, "action": "mark_won"},
-                    created_at=clock.now(),
-                )
-            )
-            db.commit()
-
+    db.refresh(reply)
     return ReplyResponse.model_validate(reply)
 
 

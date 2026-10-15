@@ -28,6 +28,14 @@ export function RepliesPage() {
   const targetReplyId = searchParams.get('reply_id') ? Number(searchParams.get('reply_id')) : null
 
   const [filterClass, setFilterClass] = useState<string>('')
+  const [handledIds, setHandledIds] = useState<number[]>(() => {
+    try {
+      const stored = localStorage.getItem('coldreach_handled_reply_ids')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  })
 
   // 1. Fetch Inbound Inboxes (accounts receiving replies)
   const { data: inboxesData } = useQuery({
@@ -90,8 +98,16 @@ export function RepliesPage() {
 
   const markHandledMutation = useMutation({
     mutationFn: (id: number) => api.replies.markHandled(id),
-    onSuccess: () => {
-      toast({ title: 'Reply Handled', type: 'info' })
+    onSuccess: (_data, id) => {
+      setHandledIds((prev) => {
+        if (prev.includes(id)) return prev
+        const updated = [...prev, id]
+        try {
+          localStorage.setItem('coldreach_handled_reply_ids', JSON.stringify(updated))
+        } catch {}
+        return updated
+      })
+      toast({ title: 'Reply Marked as Reviewed', message: 'Reply status updated.', type: 'info' })
       queryClient.invalidateQueries({ queryKey: ['replies'] })
       queryClient.invalidateQueries({ queryKey: ['recentRepliesNotifications'] })
     },
@@ -158,14 +174,15 @@ export function RepliesPage() {
           <select
             value={filterClass}
             onChange={(e) => setFilterClass(e.target.value)}
-            className="h-8 px-2.5 text-xs bg-card border border-border rounded-md text-foreground cursor-pointer"
+            className="h-8 px-2.5 text-xs bg-card border border-border rounded-md text-foreground cursor-pointer font-medium"
           >
             <option value="">All Sentiment Categories</option>
-            <option value="positive">Positive / Interested</option>
-            <option value="question">Information / Question</option>
-            <option value="out_of_office">Out of Office (OOO)</option>
-            <option value="not_interested">Not Interested</option>
-            <option value="unsubscribe">Unsubscribe</option>
+            <option value="positive">🟢 Positive / Interested</option>
+            <option value="other">⚪ General / Other</option>
+            <option value="question">❓ Question / Inquiry</option>
+            <option value="out_of_office">🟡 Out of Office (OOO)</option>
+            <option value="not_interested">🔴 Not Interested</option>
+            <option value="unsubscribe">🚫 Unsubscribe</option>
           </select>
 
           <button
@@ -357,14 +374,20 @@ export function RepliesPage() {
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      disabled={markHandledMutation.isPending}
-                      onClick={() => markHandledMutation.mutate(rep.id)}
-                      className="px-2.5 py-1 text-xs font-medium border border-border hover:bg-muted text-muted-foreground hover:text-foreground rounded-md flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" /> Mark Reviewed
-                    </button>
+                    {handledIds.includes(rep.id) ? (
+                      <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-md flex items-center gap-1 shadow-2xs">
+                        <CheckCircle className="w-3.5 h-3.5" /> Reviewed
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={markHandledMutation.isPending}
+                        onClick={() => markHandledMutation.mutate(rep.id)}
+                        className="px-2.5 py-1 text-xs font-medium border border-border hover:bg-muted text-muted-foreground hover:text-foreground rounded-md flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" /> Mark Reviewed
+                      </button>
+                    )}
                   </div>
                 </div>
 

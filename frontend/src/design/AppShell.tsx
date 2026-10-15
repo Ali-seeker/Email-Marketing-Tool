@@ -19,6 +19,7 @@ import {
   Flame,
   Bell,
   Mail,
+  CheckCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTheme } from './ThemeProvider'
@@ -59,18 +60,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     refetchInterval: 15000,
   })
 
-  const { data: unhandledRepliesData } = useQuery({
-    queryKey: ['unhandledRepliesCount'],
-    queryFn: () => api.replies.list({ page_size: 1 }),
-    refetchInterval: 15000,
-  })
+
 
   // Notifications dropdown replies
   const { data: recentRepliesData } = useQuery({
     queryKey: ['recentRepliesNotifications'],
     queryFn: () => api.replies.list({ page_size: 8 }),
-    refetchInterval: 15000,
+    refetchInterval: 3000,
   })
+
+  // Track read reply IDs in localStorage for instant notification clearing
+  const [readReplyIds, setReadReplyIds] = useState<number[]>(() => {
+    try {
+      const stored = localStorage.getItem('coldreach_read_reply_ids')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  })
+
+  const markReplyAsRead = (id: number) => {
+    setReadReplyIds((prev) => {
+      if (prev.includes(id)) return prev
+      const updated = [...prev, id]
+      try {
+        localStorage.setItem('coldreach_read_reply_ids', JSON.stringify(updated))
+      } catch {}
+      return updated
+    })
+  }
+
+  const markAllRepliesAsRead = () => {
+    const allIds = recentRepliesData?.items?.map((r) => r.id) || []
+    setReadReplyIds((prev) => {
+      const combined = Array.from(new Set([...prev, ...allIds]))
+      try {
+        localStorage.setItem('coldreach_read_reply_ids', JSON.stringify(combined))
+      } catch {}
+      return combined
+    })
+    toast({
+      title: 'Notifications Cleared',
+      message: 'Tamam reply notifications read mark ho gaye hain.',
+      type: 'info',
+    })
+  }
+
+  // When user is viewing /replies page, automatically mark currently loaded replies as read
+  useEffect(() => {
+    if (location.pathname === '/replies' && recentRepliesData?.items?.length) {
+      const currentIds = recentRepliesData.items.map((r) => r.id)
+      setReadReplyIds((prev) => {
+        const hasUnread = currentIds.some((id) => !prev.includes(id))
+        if (!hasUnread) return prev
+        const combined = Array.from(new Set([...prev, ...currentIds]))
+        try {
+          localStorage.setItem('coldreach_read_reply_ids', JSON.stringify(combined))
+        } catch {}
+        return combined
+      })
+    }
+  }, [location.pathname, recentRepliesData])
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const notificationsRef = useRef<HTMLDivElement>(null)
@@ -195,7 +245,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [queryClient, toast])
 
   const pendingCount = pendingApprovalData?.total || 0
-  const repliesCount = unhandledRepliesData?.total || 0
+  const unreadReplies = (recentRepliesData?.items || []).filter(
+    (reply) => !readReplyIds.includes(reply.id)
+  )
+  const repliesCount = unreadReplies.length
   const isKillswitchActive = safetyStatus?.killswitch_active ?? false
   const healthSeverity = safetyStatus?.severity || 'OK' // OK, WARNING, CRITICAL
   const isLive = Boolean(settingsData?.LIVE_MODE)
@@ -485,37 +538,65 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <div className="flex items-center gap-2">
                         <MessageSquare className="w-4 h-4 text-primary" />
                         <span className="text-xs font-bold text-foreground">Lead Replies</span>
-                        {repliesCount > 0 && (
-                          <span className="px-1.5 py-0.2 text-[10px] font-semibold bg-primary/10 text-primary rounded-full">
-                            {repliesCount} total
+                        {repliesCount > 0 ? (
+                          <span className="px-1.5 py-0.2 text-[10px] font-semibold bg-rose-500/15 text-rose-600 dark:text-rose-400 rounded-full">
+                            {repliesCount} new
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.2 text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-full">
+                            All read
                           </span>
                         )}
                       </div>
-                      <Link
-                        to="/replies"
-                        onClick={() => setIsNotificationsOpen(false)}
-                        className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
-                      >
-                        All Replies →
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        {repliesCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={markAllRepliesAsRead}
+                            className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
+                            title="Mark all notifications as read"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5 text-emerald-500" />
+                            Clear all
+                          </button>
+                        )}
+                        <Link
+                          to="/replies"
+                          onClick={() => {
+                            markAllRepliesAsRead()
+                            setIsNotificationsOpen(false)
+                          }}
+                          className="text-[11px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1"
+                        >
+                          All Replies →
+                        </Link>
+                      </div>
                     </div>
 
                     <div className="max-h-[380px] overflow-y-auto divide-y divide-border/60">
                       {recentRepliesData?.items && recentRepliesData.items.length > 0 ? (
                         recentRepliesData.items.map((reply) => {
                           const isPositive = reply.is_positive_hint || reply.classification === 'positive'
+                          const isUnread = !readReplyIds.includes(reply.id)
                           return (
                             <div
                               key={reply.id}
                               onClick={() => {
+                                markReplyAsRead(reply.id)
                                 setIsNotificationsOpen(false)
                                 navigate(`/replies?reply_id=${reply.id}${reply.to_email ? `&to_email=${encodeURIComponent(reply.to_email)}` : ''}`)
                               }}
-                              className="p-3 hover:bg-muted/60 transition-colors cursor-pointer group"
+                              className={cn(
+                                'p-3 hover:bg-muted/60 transition-colors cursor-pointer group',
+                                isUnread ? 'bg-primary/5 dark:bg-primary/10' : 'opacity-85'
+                              )}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5">
+                                    {isUnread && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" title="Unread" />
+                                    )}
                                     <span className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                                       {reply.from_email}
                                     </span>
