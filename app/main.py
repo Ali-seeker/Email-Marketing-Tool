@@ -94,11 +94,12 @@ def create_app() -> FastAPI:
     @app.get("/api/health", tags=["Health"])
     def health_check() -> dict[str, object]:
         """Health check endpoint exposing runtime safety status."""
+        curr_settings = get_settings()
         return {
             "status": "ok",
-            "app_name": settings.APP_NAME,
-            "live_mode": settings.LIVE_MODE,
-            "environment": settings.ENVIRONMENT,
+            "app_name": curr_settings.APP_NAME,
+            "live_mode": curr_settings.LIVE_MODE,
+            "environment": curr_settings.ENVIRONMENT,
         }
 
     return app

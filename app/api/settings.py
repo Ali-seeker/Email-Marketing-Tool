@@ -101,8 +101,12 @@ def update_whitelisted_settings(
     - Lowering safety throttles below defaults (e.g. MIN_GAP_SECONDS < 120 or
       BOUNCE_RATE_STOP_THRESHOLD_PERCENT > 2.0) requires explicit `confirm=True`.
     """
-    # Filter out read-only/system status fields like LIVE_MODE that are returned by GET
-    valid_settings = {k: v for k, v in payload.settings.items() if k != "LIVE_MODE"}
+    if "LIVE_MODE" in payload.settings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Setting 'LIVE_MODE' is not editable or not whitelisted.",
+        )
+    valid_settings = payload.settings
 
     for key, val in valid_settings.items():
         if key not in WHITELISTED_SETTINGS:

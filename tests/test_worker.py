@@ -33,7 +33,13 @@ from app.worker import Worker, is_killswitch_active, recover_stuck_sending_messa
 @pytest.fixture
 def worker_db() -> tuple[Session, sessionmaker]:
     """Create in-memory SQLite database session and factory."""
-    engine = create_engine("sqlite:///:memory:")
+    from sqlalchemy.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(bind=engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     with session_factory() as session:
@@ -124,6 +130,9 @@ def test_no_socket_opened_in_dry_run_across_30_emails(
         )
 
     # Patch socket.socket
+    monkeypatch.setenv("LIVE_MODE", "false")
+    from app.core.config import get_settings
+    get_settings.cache_clear()
     socket_mock = MagicMock()
     monkeypatch.setattr(socket, "socket", socket_mock)
 
