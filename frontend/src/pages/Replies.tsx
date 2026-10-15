@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -58,19 +58,18 @@ export function RepliesPage() {
     queryFn: () => api.mailboxes.list(),
   })
 
-  // 3. Fetch Inbound Replies for Selected Inbox & Filter
+  // 3. Fetch Inbound Replies for Selected Inbox
   const {
     data: repliesData,
     isLoading,
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['replies', filterClass, selectedInbox],
+    queryKey: ['replies', selectedInbox],
     queryFn: () =>
       api.replies.list({
         page: 1,
-        page_size: 50,
-        classification: filterClass || undefined,
+        page_size: 100,
         to_email: selectedInbox || undefined,
       }),
     refetchInterval: 3000,
@@ -132,7 +131,47 @@ export function RepliesPage() {
     },
   })
 
-  const replies: Reply[] = repliesData?.items || []
+  const allReplies: Reply[] = repliesData?.items || []
+
+  // Client-side sentiment filtering (Instant, 100% reliable, zero network latency)
+  const replies: Reply[] = useMemo(() => {
+    if (!filterClass) return allReplies
+    return allReplies.filter((rep) => {
+      const cls = (rep.classification || '').toLowerCase()
+      const isPositive = Boolean(rep.is_positive_hint) || cls.includes('positive')
+
+      if (filterClass === 'positive') {
+        return isPositive
+      }
+      if (filterClass === 'other') {
+        return (
+          !isPositive &&
+          (cls.includes('other') ||
+            (!cls.includes('office') && !cls.includes('auto') && !cls.includes('unsub')))
+        )
+      }
+      if (filterClass === 'out_of_office') {
+        return cls.includes('out_of_office') || cls.includes('auto_reply') || cls.includes('ooo')
+      }
+      if (filterClass === 'not_interested') {
+        return cls.includes('not_interested') || cls.includes('negative')
+      }
+      if (filterClass === 'unsubscribe') {
+        return cls.includes('unsubscribe') || cls.includes('opt_out')
+      }
+      if (filterClass === 'question') {
+        return cls.includes('question') || cls.includes('info')
+      }
+      return cls === filterClass.toLowerCase()
+    })
+  }, [allReplies, filterClass])
+
+  const positiveCount = allReplies.filter(
+    (r) => r.is_positive_hint || (r.classification || '').toLowerCase().includes('positive')
+  ).length
+  const otherCount = allReplies.filter(
+    (r) => !r.is_positive_hint && !(r.classification || '').toLowerCase().includes('positive')
+  ).length
 
   // Combine known mailboxes and active reply inboxes
   const inboxMap = new Map<string, number>()
@@ -192,9 +231,9 @@ export function RepliesPage() {
             onChange={(e) => setFilterClass(e.target.value)}
             className="h-8 px-2.5 text-xs bg-card border border-border rounded-md text-foreground cursor-pointer font-medium"
           >
-            <option value="">All Sentiment Categories</option>
-            <option value="positive">🟢 Positive / Interested</option>
-            <option value="other">⚪ General / Other</option>
+            <option value="">All Sentiment Categories ({allReplies.length})</option>
+            <option value="positive">🟢 Positive / Interested ({positiveCount})</option>
+            <option value="other">⚪ General / Other ({otherCount})</option>
             <option value="question">❓ Question / Inquiry</option>
             <option value="out_of_office">🟡 Out of Office (OOO)</option>
             <option value="not_interested">🔴 Not Interested</option>
@@ -304,9 +343,17 @@ export function RepliesPage() {
       ) : replies.length === 0 ? (
         <EmptyState
           icon={<MessageSquare className="w-7 h-7 text-indigo-500" />}
-          title={selectedInbox ? `No replies in ${selectedInbox}` : 'No Inbound Replies Yet'}
+          title={
+            filterClass
+              ? 'No replies matching this category'
+              : selectedInbox
+              ? `No replies in ${selectedInbox}`
+              : 'No Inbound Replies Yet'
+          }
           description={
-            selectedInbox
+            filterClass
+              ? "Select 'All Sentiment Categories' above to view all replies."
+              : selectedInbox
               ? `There are currently no inbound responses received on ${selectedInbox}. Try switching to another inbox or All Inboxes.`
               : 'Your outreach sequence is currently active. As recipients reply, their responses will automatically show up here with AI sentiment classification.'
           }
