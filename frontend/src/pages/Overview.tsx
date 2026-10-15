@@ -27,36 +27,42 @@ export function OverviewPage() {
   const { data: capacityData, isLoading: isCapacityLoading } = useQuery({
     queryKey: ['planningCapacity'],
     queryFn: () => api.planning.capacity(),
+    refetchInterval: 5000,
   })
 
   // 2. Fetch Funnel & Conversion Stats
   const { data: funnelData, isLoading: isFunnelLoading } = useQuery({
     queryKey: ['funnelStats'],
     queryFn: () => api.stats.funnel(),
+    refetchInterval: 5000,
   })
 
   // 3. Fetch Bounce Rate Stats
   const { data: bounceData, isLoading: isBounceLoading } = useQuery({
     queryKey: ['bounceRateStats'],
     queryFn: () => api.stats.bounceRate(),
+    refetchInterval: 10000,
   })
 
   // 4. Fetch 30-day Timeseries
   const { data: timeseriesData, isLoading: isTimeseriesLoading } = useQuery({
     queryKey: ['timeseriesStats'],
     queryFn: () => api.stats.timeseries(30),
+    refetchInterval: 15000,
   })
 
   // 5. Fetch Today's Scheduled Plan
   const { data: planningData, isLoading: isPlanLoading } = useQuery({
     queryKey: ['planningPreview'],
     queryFn: () => api.planning.preview(),
+    refetchInterval: 5000,
   })
 
   // 6. Fetch Recent Replies
   const { data: repliesData, isLoading: isRepliesLoading } = useQuery({
     queryKey: ['recentReplies'],
     queryFn: () => api.replies.list({ page_size: 6 }),
+    refetchInterval: 5000,
   })
 
   // Computed KPIs

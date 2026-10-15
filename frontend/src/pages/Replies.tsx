@@ -57,6 +57,7 @@ export function RepliesPage() {
         classification: filterClass || undefined,
         to_email: selectedInbox || undefined,
       }),
+    refetchInterval: 3000,
   })
 
   // Auto scroll to targetReplyId if opened from notification bell

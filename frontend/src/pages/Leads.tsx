@@ -103,6 +103,7 @@ export function LeadsPage() {
         country: countryFilter || undefined,
         campaign_id: campaignIdParam,
       }),
+    refetchInterval: 3000,
   })
 
   // 2. Fetch Selected Lead Detail & Timeline
@@ -110,6 +111,7 @@ export function LeadsPage() {
     queryKey: ['leadTimeline', selectedLeadId],
     queryFn: () => api.leads.get(selectedLeadId!),
     enabled: selectedLeadId !== null,
+    refetchInterval: 3000,
   })
 
   // Synchronize note state when leadTimeline loads or changes

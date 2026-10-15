@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     IMAP_USER: str = "user@example.com"
     IMAP_APP_PASSWORD: SecretStr = SecretStr("")
     IMAP_USE_SSL: bool = True
-    INBOX_POLL_INTERVAL_SECONDS: int = 180
+    INBOX_POLL_INTERVAL_SECONDS: int = 15
 
     # Safety & Alerting Configuration
     TELEGRAM_BOT_TOKEN: str | None = None

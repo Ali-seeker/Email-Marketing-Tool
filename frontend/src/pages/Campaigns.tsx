@@ -41,6 +41,7 @@ export function CampaignsPage() {
   } = useQuery({
     queryKey: ['campaigns'],
     queryFn: () => api.campaigns.list({ page_size: 20 }),
+    refetchInterval: 3000,
   })
 
   // 2. Fetch Planning Preview & Capacity
@@ -52,6 +53,7 @@ export function CampaignsPage() {
   } = useQuery({
     queryKey: ['planPreview'],
     queryFn: () => api.planning.preview(),
+    refetchInterval: 3000,
   })
 
   const { data: capacityData } = useQuery({
@@ -562,6 +564,7 @@ function CampaignScheduleViewer({
   const { data: scheduleItems, isLoading } = useQuery({
     queryKey: ['campaignSchedule', campaignId],
     queryFn: () => api.campaigns.schedule(campaignId),
+    refetchInterval: 3000,
   })
 
   const items: CampaignScheduleItem[] = scheduleItems || []

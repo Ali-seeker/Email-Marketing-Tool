@@ -27,6 +27,7 @@ export function ApprovalPage() {
   const { data: pendingData, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['pendingApprovals'],
     queryFn: () => api.approval.listPending({ page: 1, page_size: 100 }),
+    refetchInterval: 3000,
   })
 
   // Approve single lead
