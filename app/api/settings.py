@@ -101,7 +101,10 @@ def update_whitelisted_settings(
     - Lowering safety throttles below defaults (e.g. MIN_GAP_SECONDS < 120 or
       BOUNCE_RATE_STOP_THRESHOLD_PERCENT > 2.0) requires explicit `confirm=True`.
     """
-    for key, val in payload.settings.items():
+    # Filter out read-only/system status fields like LIVE_MODE that are returned by GET
+    valid_settings = {k: v for k, v in payload.settings.items() if k != "LIVE_MODE"}
+
+    for key, val in valid_settings.items():
         if key not in WHITELISTED_SETTINGS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -162,7 +165,7 @@ def update_whitelisted_settings(
                 ) from exc
 
     # Persist validated settings into Setting table
-    for key, val in payload.settings.items():
+    for key, val in valid_settings.items():
         if isinstance(val, (dict, list, bool)):
             str_val = json.dumps(val)
         else:
@@ -175,13 +178,13 @@ def update_whitelisted_settings(
     # Realign any currently scheduled emails to the new window/days
     schedule_keys = {"SEND_DAYS", "SEND_WINDOW_START", "SEND_WINDOW_END", "MAILBOX_TZ"}
     realigned_count = 0
-    if schedule_keys.intersection(payload.settings.keys()):
+    if schedule_keys.intersection(valid_settings.keys()):
         from app.services.planner import realign_scheduled_emails
         realigned_count = realign_scheduled_emails(db=db)
 
     return {
         "status": "updated",
-        "updated_keys": list(payload.settings.keys()),
+        "updated_keys": list(valid_settings.keys()),
         "realigned_emails": realigned_count,
         "settings": get_whitelisted_settings(db=db),
     }

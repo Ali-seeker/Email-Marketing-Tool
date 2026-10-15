@@ -64,7 +64,11 @@ export function SettingsPage() {
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: (confirm: boolean = false) => api.settings.update(form, confirm),
+    mutationFn: (confirm: boolean = false) => {
+      // Exclude read-only status fields like LIVE_MODE from update payload
+      const { LIVE_MODE, ...updatable } = form
+      return api.settings.update(updatable, confirm)
+    },
     onSuccess: () => {
       toast({
         title: 'Settings Saved',
