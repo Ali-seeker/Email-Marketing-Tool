@@ -175,12 +175,34 @@ def update_whitelisted_settings(
 
     db.commit()
 
-    # Realign any currently scheduled emails to the new window/days
-    schedule_keys = {"SEND_DAYS", "SEND_WINDOW_START", "SEND_WINDOW_END", "MAILBOX_TZ"}
+    # Clear config cache so fresh runtime values are used everywhere
+    get_settings.cache_clear()
+
+    # Realign any currently scheduled emails to the new window/days/gaps/jitter
+    schedule_keys = {
+        "SEND_DAYS",
+        "SEND_WINDOW_START",
+        "SEND_WINDOW_END",
+        "MAILBOX_TZ",
+        "MIN_GAP_SECONDS",
+        "MAX_JITTER_SECONDS",
+        "HARD_MAX_PER_DAY",
+        "MAX_EMAILS_PER_DAY_PER_MAILBOX",
+        "OUTREACH_START_DATE",
+    }
     realigned_count = 0
     if schedule_keys.intersection(valid_settings.keys()):
-        from app.services.planner import realign_scheduled_emails
+        from app.core.clock import system_clock
+        from app.services.planner import get_mailbox_tz, plan_day, realign_scheduled_emails
+
         realigned_count = realign_scheduled_emails(db=db)
+        try:
+            clk_now = system_clock.now()
+            mailbox_tz = get_mailbox_tz(db)
+            today_date = clk_now.astimezone(mailbox_tz).date()
+            plan_day(target_date=today_date, db=db, clock=system_clock)
+        except Exception as plan_err:
+            logger.warning("Auto plan_day on settings update failed: %s", plan_err)
 
     return {
         "status": "updated",

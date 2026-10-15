@@ -79,6 +79,11 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
       queryClient.invalidateQueries({ queryKey: ['dailyCapacity'] })
       queryClient.invalidateQueries({ queryKey: ['planningPreview'] })
+      queryClient.invalidateQueries({ queryKey: ['planPreview'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      queryClient.invalidateQueries({ queryKey: ['campaignSchedule'] })
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['pendingApproval'] })
     },
     onError: (err: any) => {
       // If server asks for confirmation

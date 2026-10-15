@@ -598,4 +598,57 @@ def test_realign_scheduled_emails_on_settings_change(plan_db: Session) -> None:
     assert can_send(lead, msg, plan_db, clock=clock) is True
 
 
+def test_realign_scheduled_emails_enforces_jitter(plan_db: Session) -> None:
+    """Verify realign_scheduled_emails enforces MIN_GAP_SECONDS + jitter between consecutive emails."""
+    from app.services.planner import realign_scheduled_emails
+
+    campaign = plan_db.scalar(select(Campaign))
+    assert campaign is not None
+
+    clock = FakeClock(datetime(2026, 11, 4, 14, 0, tzinfo=UTC))  # Wednesday 14:00 UTC
+
+    leads = []
+    msgs = []
+    for i in range(2):
+        l = Lead(
+            campaign_id=campaign.id,
+            email=f"jitter_test_{i}@acme.com",
+            status=LeadStatus.IN_SEQUENCE.value,
+            timezone="UTC",
+            personal_note="Test note",
+        )
+        plan_db.add(l)
+        leads.append(l)
+    plan_db.commit()
+
+    for l in leads:
+        plan_db.refresh(l)
+        m = EmailMessage(
+            lead_id=l.id,
+            step=1,
+            subject=f"Subject {l.id}",
+            body="Body",
+            status=EmailMessageStatus.SCHEDULED.value,
+            scheduled_at=datetime(2026, 11, 4, 14, 0, tzinfo=UTC),
+        )
+        plan_db.add(m)
+        msgs.append(m)
+    plan_db.commit()
+
+    # Configure min gap 120s, max jitter 60s
+    plan_db.merge(Setting(key="MIN_GAP_SECONDS", value="120"))
+    plan_db.merge(Setting(key="MAX_JITTER_SECONDS", value="60"))
+    plan_db.commit()
+
+    # Trigger realignment with a fixed jitter of 35 seconds
+    realign_scheduled_emails(plan_db, clock=clock, jitter_fn=lambda: 35)
+
+    for m in msgs:
+        plan_db.refresh(m)
+
+    gap = (msgs[1].scheduled_at - msgs[0].scheduled_at).total_seconds()
+    assert gap == 120 + 35  # Exactly 155s, not 120s!
+
+
+
 

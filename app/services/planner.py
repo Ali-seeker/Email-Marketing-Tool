@@ -601,12 +601,14 @@ def plan_day(
 def realign_scheduled_emails(
     db: Session,
     clock: Clock | None = None,
+    jitter_fn: Callable[[], int] | None = None,
 ) -> int:
     """Realign all currently SCHEDULED email messages when outreach days, window times,
-    or mailbox timezone are updated.
+    min gap, jitter, or mailbox timezone are updated.
 
     Ensures that any message whose assigned scheduled_at falls outside the newly configured
-    days or window is automatically shifted forward to the next valid slot.
+    days or window is automatically shifted forward to the next valid slot, with MIN_GAP_SECONDS
+    and MAX_JITTER_SECONDS enforced between consecutive emails.
     """
     clk = clock or system_clock
     now_utc = clk.now()
@@ -617,6 +619,10 @@ def realign_scheduled_emails(
     allowed_weekdays = get_allowed_weekdays(db)
     window_start_time, window_end_time = get_send_window(db)
     min_gap_sec = int(get_setting(db, "MIN_GAP_SECONDS", default=120))
+    max_jitter_sec = int(get_setting(db, "MAX_JITTER_SECONDS", default=180))
+
+    if jitter_fn is None:
+        jitter_fn = lambda: random.randint(0, max(0, max_jitter_sec))  # noqa: E731
 
     raw_msgs = db.scalars(
         select(EmailMessage)
@@ -639,10 +645,33 @@ def realign_scheduled_emails(
         cand = datetime.combine(local_date, window_start_time, tzinfo=ltz).astimezone(UTC)
         return max(now_utc, cand)
 
-    scheduled_msgs = sorted(raw_msgs, key=_earliest_window_utc)
+    scheduled_msgs = sorted(
+        raw_msgs,
+        key=lambda m: (_earliest_window_utc(m), 0 if m.step > 1 else 1, m.step, m.id),
+    )
+
+    # Check if an email was recently sent across the system
+    latest_sent_stmt = (
+        select(EmailMessage.sent_at)
+        .where(
+            EmailMessage.status.in_(
+                (EmailMessageStatus.SENT.value, EmailMessageStatus.SENT_DRY_RUN.value)
+            )
+        )
+        .order_by(EmailMessage.sent_at.desc())
+    )
+    latest_sent_dt = db.scalar(latest_sent_stmt)
+    if latest_sent_dt is not None:
+        if latest_sent_dt.tzinfo is None:
+            latest_sent_dt = latest_sent_dt.replace(tzinfo=UTC)
+        if latest_sent_dt <= now_utc and (now_utc - latest_sent_dt).total_seconds() < (min_gap_sec + max_jitter_sec):
+            last_scheduled_utc: datetime | None = latest_sent_dt
+        else:
+            last_scheduled_utc = None
+    else:
+        last_scheduled_utc = None
 
     realigned_count = 0
-    last_scheduled_utc: datetime | None = None
 
     for msg in scheduled_msgs:
         lead = msg.lead or db.get(Lead, msg.lead_id)
@@ -660,12 +689,14 @@ def realign_scheduled_emails(
 
         # Find the earliest valid slot for this lead starting from now
         start_date = now_utc.astimezone(lead_tz).date()
-        earliest_possible_utc = now_utc
         if last_scheduled_utc is not None:
+            jitter = jitter_fn()
             earliest_possible_utc = max(
-                earliest_possible_utc,
-                last_scheduled_utc + timedelta(seconds=min_gap_sec),
+                now_utc,
+                last_scheduled_utc + timedelta(seconds=min_gap_sec + jitter),
             )
+        else:
+            earliest_possible_utc = now_utc
 
         day_cursor = start_date
         chosen_slot_utc: datetime | None = None
