@@ -290,7 +290,10 @@ class SmtpSender(MailSender):
                 server: smtplib.SMTP = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
             else:
                 server = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
-                server.starttls()
+                try:
+                    server.starttls()
+                except smtplib.SMTPNotSupportedError:
+                    pass
 
             with server:
                 if self.username and self.password:
