@@ -6,11 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import Pagination, get_db
+from app.api.deps import Pagination, get_clock, get_db
 from app.api.schemas import CampaignCreate, CampaignResponse, CampaignUpdate, PaginatedResponse
+from app.core.clock import Clock, system_clock
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email_message import EmailMessage
 from app.models.lead import Lead, LeadStatus
+from app.services.planner import get_mailbox_tz, plan_day
 from app.services.sequencer import check_and_update_completed_campaigns
 from app.services.templates import load_default_sequence
 
@@ -235,15 +237,25 @@ def resume_campaign(
 def activate_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
 ) -> CampaignResponse:
-    """Activate a draft or paused campaign."""
-    return resume_campaign(campaign_id, db=db)
+    """Activate a draft or paused campaign and schedule its due emails."""
+    res = resume_campaign(campaign_id, db=db)
+    try:
+        clk_now = clock.now()
+        mailbox_tz = get_mailbox_tz(db)
+        today_date = clk_now.astimezone(mailbox_tz).date()
+        plan_day(target_date=today_date, db=db, clock=clock)
+    except Exception:
+        pass
+    return res
 
 
 @router.get("/{campaign_id}/schedule")
 def get_campaign_schedule(
     campaign_id: int,
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
 ):
     """Retrieve all email messages and their schedule/status for leads in this campaign."""
     campaign = db.get(Campaign, campaign_id)
@@ -252,6 +264,16 @@ def get_campaign_schedule(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Campaign {campaign_id} not found.",
         )
+
+    # Auto-schedule any approved due emails for active campaign if they have no scheduled_at
+    if campaign.status == CampaignStatus.ACTIVE.value:
+        try:
+            clk_now = clock.now()
+            mailbox_tz = get_mailbox_tz(db)
+            today_date = clk_now.astimezone(mailbox_tz).date()
+            plan_day(target_date=today_date, db=db, clock=clock)
+        except Exception:
+            pass
 
     emails = db.scalars(
         select(EmailMessage)

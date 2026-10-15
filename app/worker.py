@@ -45,6 +45,7 @@ from app.services.planner import (
     get_outreach_start_date,
     get_ramp_up_cap,
     get_setting,
+    plan_day,
 )
 from app.services.safety import (
     evaluate_and_enforce_safety,
@@ -631,6 +632,14 @@ class Worker:
             if is_killswitch_active(db):
                 logger.warning("Global kill-switch active. Worker cycle skipped.")
                 return 0
+
+            # 4. Auto-plan and schedule any approved due emails
+            try:
+                mailbox_tz = get_mailbox_tz(db)
+                today_date = now.astimezone(mailbox_tz).date()
+                plan_day(target_date=today_date, db=db, clock=self.clock)
+            except Exception as e:
+                logger.warning("Auto-scheduling check failed in worker cycle: %s", e)
 
             # Query scheduled messages due for dispatch
             stmt = (
