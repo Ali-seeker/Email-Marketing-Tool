@@ -36,6 +36,14 @@ export function RepliesPage() {
       return []
     }
   })
+  const [wonIds, setWonIds] = useState<number[]>(() => {
+    try {
+      const stored = localStorage.getItem('coldreach_won_reply_ids')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  })
 
   // 1. Fetch Inbound Inboxes (accounts receiving replies)
   const { data: inboxesData } = useQuery({
@@ -81,10 +89,18 @@ export function RepliesPage() {
   // Mutations
   const markWonMutation = useMutation({
     mutationFn: (id: number) => api.replies.markWon(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      setWonIds((prev) => {
+        if (prev.includes(id)) return prev
+        const updated = [...prev, id]
+        try {
+          localStorage.setItem('coldreach_won_reply_ids', JSON.stringify(updated))
+        } catch {}
+        return updated
+      })
       toast({
         title: '🎉 Deal Marked as Won!',
-        message: 'Lead converted successfully and status updated.',
+        message: 'Lead converted successfully and funnel stats updated.',
         type: 'success',
       })
       queryClient.invalidateQueries({ queryKey: ['replies'] })
@@ -363,15 +379,21 @@ export function RepliesPage() {
                   {/* Actions */}
                   <div className="flex items-center gap-2 self-end sm:self-center">
                     {rep.lead_id && (
-                      <button
-                        type="button"
-                        disabled={markWonMutation.isPending}
-                        onClick={() => markWonMutation.mutate(rep.lead_id!)}
-                        className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                        title="Mark lead as converted/won customer"
-                      >
-                        <Trophy className="w-3.5 h-3.5" /> Mark Won
-                      </button>
+                      wonIds.includes(rep.id) ? (
+                        <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-md flex items-center gap-1 shadow-2xs">
+                          <Trophy className="w-3.5 h-3.5 text-amber-500" /> Won Customer
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={markWonMutation.isPending}
+                          onClick={() => markWonMutation.mutate(rep.id)}
+                          className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                          title="Mark lead as converted/won customer"
+                        >
+                          <Trophy className="w-3.5 h-3.5" /> Mark Won
+                        </button>
+                      )
                     )}
 
                     {handledIds.includes(rep.id) ? (
