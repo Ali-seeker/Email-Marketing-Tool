@@ -28,7 +28,7 @@ from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus, RiskLevel
 from app.models.setting import Setting
 from app.services.dns_resolver import DnsResolver, LiveDnsResolver
-from app.services.email_verifier import EmailVerifier, NullVerifier, get_default_verifier
+from app.services.email_verifier import EmailVerifier, get_default_verifier
 
 logger = get_logger(__name__)
 
@@ -254,7 +254,8 @@ def evaluate_email(
     if domain in RESERVED_TEST_DOMAINS:
         return RiskLevel.BAD.value, f"Reserved example/test domain: {domain} (RFC 2606)"
 
-    # 2c. Known typo / misspelled domain check (protects against high bounce rates and typosquatting)
+    # 2c. Known typo / misspelled domain check
+    # (protects against high bounce rates and typosquatting)
     if domain in COMMON_TYPO_DOMAINS:
         intended = COMMON_TYPO_DOMAINS[domain]
         return (
@@ -291,7 +292,8 @@ def evaluate_email(
 
     # 6. External verifier (Hunter.io / etc.)
     # Credit-Saver Policy: Only verify with Hunter if all prior local checks pass as OK!
-    # If the lead already failed local syntax, typo, disposable, or DNS checks, do not waste an external credit.
+    # If the lead already failed local syntax, typo, disposable, or DNS checks,
+    # do not waste an external credit.
     if risk_level == RiskLevel.OK.value:
         ext_result = verifier.verify(clean_email, db, clock)
         if ext_result:

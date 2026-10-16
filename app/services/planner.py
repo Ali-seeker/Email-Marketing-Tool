@@ -312,7 +312,7 @@ def get_effective_daily_cap(db: Session, target_date: date) -> int:
     from app.models.mailbox import Mailbox
 
     active_mbs = db.scalars(
-        select(Mailbox).where(Mailbox.is_active == True)
+        select(Mailbox).where(Mailbox.is_active)
     ).all()
 
     if active_mbs:
@@ -343,7 +343,8 @@ def daily_capacity(
 ) -> int:
     """Calculate remaining sending capacity for target date in mailbox timezone.
 
-    Remaining capacity = effective daily cap for that date minus emails already sent or scheduled that day.
+    Remaining capacity = effective daily cap for that date minus emails already sent
+    or scheduled that day.
     """
     if isinstance(target_date, str):
         target_date = date.fromisoformat(target_date.strip())
@@ -581,7 +582,7 @@ def plan_day(
             from app.models.mailbox import Mailbox
 
             active_mbs = db.scalars(
-                select(Mailbox).where(Mailbox.is_active == True).order_by(Mailbox.id.asc())
+                select(Mailbox).where(Mailbox.is_active).order_by(Mailbox.id.asc())
             ).all()
 
             if email_msg.step > 1:
@@ -684,7 +685,8 @@ def realign_scheduled_emails(
     if latest_sent_dt is not None:
         if latest_sent_dt.tzinfo is None:
             latest_sent_dt = latest_sent_dt.replace(tzinfo=UTC)
-        if latest_sent_dt <= now_utc and (now_utc - latest_sent_dt).total_seconds() < (min_gap_sec + max_jitter_sec):
+        elapsed_sec = (now_utc - latest_sent_dt).total_seconds()
+        if latest_sent_dt <= now_utc and elapsed_sec < (min_gap_sec + max_jitter_sec):
             last_scheduled_utc: datetime | None = latest_sent_dt
         else:
             last_scheduled_utc = None

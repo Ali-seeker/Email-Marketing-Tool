@@ -240,9 +240,13 @@ def send_test_email(
     from_name = cfg.SMTP_FROM_NAME or "ColdReach Tester"
 
     if not host or host == "smtp.example.com":
+        detail_msg = (
+            "SMTP host is not configured yet. "
+            "Please configure SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD in your .env file."
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="SMTP host is not configured yet. Please configure SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD in your .env file.",
+            detail=detail_msg,
         )
 
     sender = SmtpSender(
@@ -253,6 +257,11 @@ def send_test_email(
         use_ssl=(port == 465),
     )
 
+    congrats_msg = (
+        "Congratulations! This test email was successfully dispatched from ColdReach "
+        "directly via your SMTP server.\n\n"
+    )
+
     outgoing = OutgoingMail(
         to_email=payload.to_email,
         from_email=from_email,
@@ -260,7 +269,7 @@ def send_test_email(
         subject="[ColdReach] Live SMTP Test - Delivery Successful!",
         body=(
             f"Hello!\n\n"
-            f"Congratulations! This test email was successfully dispatched from ColdReach directly via your SMTP server.\n\n"
+            f"{congrats_msg}"
             f"• SMTP Server: {host}:{port}\n"
             f"• Sender Address: {from_email}\n"
             f"• Recipient: {payload.to_email}\n\n"

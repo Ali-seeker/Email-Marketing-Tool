@@ -131,7 +131,8 @@ export function RepliesPage() {
     },
   })
 
-  const allReplies: Reply[] = repliesData?.items || []
+  const rawItems = repliesData?.items
+  const allReplies: Reply[] = useMemo(() => rawItems || [], [rawItems])
 
   // Client-side sentiment filtering (Instant, 100% reliable, zero network latency)
   const replies: Reply[] = useMemo(() => {

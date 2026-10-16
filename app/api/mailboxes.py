@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -26,12 +26,6 @@ def _calculate_mailbox_stats(m: Mailbox, db: Session) -> tuple[int, int]:
     mailbox_tz = get_mailbox_tz(db)
     now_local = datetime.now(UTC).astimezone(mailbox_tz).date()
 
-    stmt = select(func.count(EmailMessage.id)).where(
-        EmailMessage.mailbox_id == m.id,
-        EmailMessage.status.in_(
-            (EmailMessageStatus.SENT.value, EmailMessageStatus.SENT_DRY_RUN.value)
-        ),
-    )
     sent_msgs = db.scalars(
         select(EmailMessage).where(
             EmailMessage.mailbox_id == m.id,
@@ -220,9 +214,12 @@ def test_mailbox_connection(
 
     result = sender.send(outgoing)
     if not result.success:
+        err_msg = (
+            f"SMTP test failed for {mailbox.email}: {result.error} (type: {result.error_type})"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"SMTP test failed for {mailbox.email}: {result.error} (type: {result.error_type})",
+            detail=err_msg,
         )
 
     return {

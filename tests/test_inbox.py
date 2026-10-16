@@ -486,6 +486,7 @@ def test_worker_inbox_integration_and_bounce_rate_stop(
 def test_multi_mailbox_uid_checkpoints(inbox_db: tuple[Session, sessionmaker]) -> None:
     """Verify that multiple active mailboxes maintain isolated UID checkpoints."""
     from unittest.mock import MagicMock
+
     from app.models.mailbox import Mailbox
 
     db, _ = inbox_db

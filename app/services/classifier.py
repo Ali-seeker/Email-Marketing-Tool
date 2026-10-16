@@ -453,7 +453,8 @@ def classify_inbound_mail(
             is_positive_hint=False,
         )
 
-    # If sender and recipient are the same email (self-test) without reply markers, ignore outgoing copy
+    # If sender and recipient are the same email (self-test) without reply markers,
+    # ignore outgoing copy
     if (
         mail.from_email.strip().lower() == mail.to_email.strip().lower()
         and not mail.in_reply_to

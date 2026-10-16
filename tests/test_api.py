@@ -713,6 +713,7 @@ def test_settings_test_email_endpoint(
 ) -> None:
     """Verify test-email endpoint calls SMTP sender and handles success/error."""
     from unittest.mock import MagicMock
+
     from app.services.sender import SendResult, SmtpSender
 
     mock_send = MagicMock(return_value=SendResult(success=True, message_id="<test-id@example.com>"))

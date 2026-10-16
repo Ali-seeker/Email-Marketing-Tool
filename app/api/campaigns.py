@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import Pagination, get_clock, get_db
 from app.api.schemas import CampaignCreate, CampaignResponse, CampaignUpdate, PaginatedResponse
-from app.core.clock import Clock, system_clock
+from app.core.clock import Clock
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email_message import EmailMessage
 from app.models.lead import Lead, LeadStatus

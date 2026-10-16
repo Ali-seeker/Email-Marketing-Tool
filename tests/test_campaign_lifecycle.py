@@ -1,16 +1,17 @@
 """Tests for campaign lifecycle: automatic completion and campaign deletion."""
 
 from datetime import UTC, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_clock, get_db
 from app.core.clock import FakeClock
-from app.core.config import Settings, get_settings
+from app.core.config import get_settings
 from app.core.db import Base
 from app.main import create_app
 from app.models.campaign import Campaign, CampaignStatus

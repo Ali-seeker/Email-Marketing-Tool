@@ -88,7 +88,7 @@ export function LeadsPage() {
       searchParams.delete('openUpload')
       setSearchParams(searchParams, { replace: true })
     }
-  }, [searchParams, campaignIdParam, campaignsData])
+  }, [searchParams, campaignIdParam, campaignsData, setSearchParams])
 
   // 1. Fetch Leads Table Data (Filtered by campaignIdParam if set)
   const { data: leadsData, isLoading } = useQuery({

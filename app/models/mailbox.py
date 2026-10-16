@@ -21,7 +21,9 @@ class Mailbox(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
-    display_name: Mapped[str] = mapped_column(String(150), default="ColdReach Operator", nullable=False)
+    display_name: Mapped[str] = mapped_column(
+        String(150), default="ColdReach Operator", nullable=False
+    )
 
     # SMTP Configuration (Outbound dispatch)
     smtp_host: Mapped[str] = mapped_column(String(255), default="smtp.gmail.com", nullable=False)

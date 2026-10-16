@@ -40,16 +40,12 @@ from app.services.inbox import (
 from app.services.linter import lint_email
 from app.services.notifier import LogNotifier, Notifier, send_daily_summary
 from app.services.planner import (
-    HARD_MAX_LIMIT,
     get_mailbox_tz,
-    get_outreach_start_date,
-    get_ramp_up_cap,
     get_setting,
     plan_day,
 )
 from app.services.safety import (
     evaluate_and_enforce_safety,
-    is_cap_halved_from_resume,
     is_killswitch_active,
     trigger_killswitch,
 )
@@ -202,11 +198,11 @@ class Worker:
         return FakeMailboxReader()
 
     def poll_inbox(self, db: Session, now: datetime) -> tuple[int, dict[str, float]]:
-        """Poll incoming emails across all active mailboxes, process bounces/replies, and calculate rates."""
+        """Poll incoming emails, process bounces/replies, and calculate rates."""
         try:
             from app.models.mailbox import Mailbox
 
-            active_mbs = db.scalars(select(Mailbox).where(Mailbox.is_active == True)).all()
+            active_mbs = db.scalars(select(Mailbox).where(Mailbox.is_active)).all()
             total_new = 0
             stats: dict[str, float] = {}
 

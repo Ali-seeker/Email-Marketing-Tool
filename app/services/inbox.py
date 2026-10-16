@@ -275,8 +275,8 @@ class ImapReader(MailboxReader):
                 return []
 
             uid_strs = data[0].split()
-            # If since_uid was 0 (first time polling this mailbox), limit to the most recent 50 emails
-            # so we don't fetch an entire years-old mailbox history over network.
+            # If since_uid was 0 (first time polling this mailbox), limit to the most
+            # recent 50 emails so we don't fetch an entire years-old mailbox history over network.
             if since_uid == 0 and len(uid_strs) > 50:
                 uid_strs = uid_strs[-50:]
 
@@ -677,7 +677,9 @@ def poll_inbox_and_process(
         last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == uid_key))
         if last_uid_setting is None and mb_id == 1:
             # Fall back to legacy global key for primary mailbox if present
-            last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID"))
+            last_uid_setting = db.scalar(
+                select(Setting.value).where(Setting.key == "LAST_INBOX_UID")
+            )
     else:
         uid_key = "LAST_INBOX_UID"
         last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == uid_key))

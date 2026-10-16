@@ -67,7 +67,9 @@ class LiveDnsResolver(DnsResolver):
                 if not cleaned_exchange or raw_exchange == ".":
                     # RFC 7505 Null MX ("MX 0 .") explicitly declares domain accepts NO mail
                     has_null_mx = True
-                    records.append(f"Null MX: . (priority {rdata.preference}) - Domain accepts no email")
+                    records.append(
+                        f"Null MX: . (priority {rdata.preference}) - Domain accepts no email"
+                    )
                 else:
                     has_mx = True
                     records.append(f"MX: {raw_exchange} (priority {rdata.preference})")
@@ -79,7 +81,8 @@ class LiveDnsResolver(DnsResolver):
         ) as err:
             logger.debug("MX lookup failed for %s: %s", domain, err)
 
-        # 2. Check A records fallback (RFC 5321 specifies A fallback ONLY when NO MX exists at all, NEVER on Null MX)
+        # 2. Check A records fallback (RFC 5321 specifies A fallback ONLY when NO MX exists at all,
+        # NEVER on Null MX)
         if not has_null_mx:
             try:
                 a_answers = resolver.resolve(domain, "A")

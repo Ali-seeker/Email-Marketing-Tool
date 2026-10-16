@@ -543,6 +543,7 @@ def test_planner_daily_capacity_and_earliest_send_at(plan_db: Session) -> None:
 def test_realign_scheduled_emails_on_settings_change(plan_db: Session) -> None:
     """Verify realign_scheduled_emails shifts scheduled messages when days/windows change."""
     import json
+
     from app.services.planner import realign_scheduled_emails
     from app.services.sequencer import can_send
 
@@ -610,23 +611,23 @@ def test_realign_scheduled_emails_enforces_jitter(plan_db: Session) -> None:
     leads = []
     msgs = []
     for i in range(2):
-        l = Lead(
+        lead_item = Lead(
             campaign_id=campaign.id,
             email=f"jitter_test_{i}@acme.com",
             status=LeadStatus.IN_SEQUENCE.value,
             timezone="UTC",
             personal_note="Test note",
         )
-        plan_db.add(l)
-        leads.append(l)
+        plan_db.add(lead_item)
+        leads.append(lead_item)
     plan_db.commit()
 
-    for l in leads:
-        plan_db.refresh(l)
+    for lead_item in leads:
+        plan_db.refresh(lead_item)
         m = EmailMessage(
-            lead_id=l.id,
+            lead_id=lead_item.id,
             step=1,
-            subject=f"Subject {l.id}",
+            subject=f"Subject {lead_item.id}",
             body="Body",
             status=EmailMessageStatus.SCHEDULED.value,
             scheduled_at=datetime(2026, 11, 4, 14, 0, tzinfo=UTC),

@@ -500,7 +500,9 @@ def check_completed_leads(
     db: Session,
     clock: Clock | None = None,
 ) -> list[Lead]:
-    """Identify leads whose final sequence step was sent > 7 days ago with no reply, and mark completed."""
+    """Identify leads whose final sequence step was sent > 7 days ago with no reply,
+    and mark completed.
+    """
     clk = clock or system_clock
     now = clk.now()
     if now.tzinfo is None:
@@ -680,7 +682,8 @@ def check_and_update_completed_campaigns(
         campaign.status = CampaignStatus.COMPLETED.value
         completed.append(campaign)
         logger.info(
-            "Campaign #%d ('%s') automatically marked as COMPLETED: all %d leads and their follow-ups have been sent.",
+            "Campaign #%d ('%s') automatically marked as COMPLETED: "
+            "all %d leads and their follow-ups have been sent.",
             campaign.id,
             campaign.name,
             len(all_leads),

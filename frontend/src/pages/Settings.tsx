@@ -66,7 +66,8 @@ export function SettingsPage() {
   const updateMutation = useMutation({
     mutationFn: (confirm: boolean = false) => {
       // Exclude read-only status fields like LIVE_MODE from update payload
-      const { LIVE_MODE, ...updatable } = form
+      const updatable = { ...form }
+      delete (updatable as { LIVE_MODE?: boolean }).LIVE_MODE
       return api.settings.update(updatable, confirm)
     },
     onSuccess: () => {

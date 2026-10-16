@@ -144,7 +144,8 @@ class HunterVerifier(EmailVerifier):
         used = self.get_used_credits(db, clock)
         if used >= self.monthly_quota:
             logger.warning(
-                "Hunter.io quota reached (%d/%d used). Skipping external check for %s; using local validation fallback.",
+                "Hunter.io quota reached (%d/%d used). "
+                "Skipping external check for %s; using local validation fallback.",
                 used,
                 self.monthly_quota,
                 email,
@@ -172,11 +173,15 @@ class HunterVerifier(EmailVerifier):
 
                     return VerifierResult(status=status, risk_level=risk, raw=data)
                 elif resp.status_code == 429:
-                    logger.error("Hunter API quota exhausted (HTTP 429). Falling back to local validation.")
+                    logger.error(
+                        "Hunter API quota exhausted (HTTP 429). Falling back to local validation."
+                    )
                     self._set_quota_exceeded(db, clock, self.monthly_quota)
                     return None
                 elif resp.status_code == 401:
-                    logger.error("Hunter API authentication failed (HTTP 401). Check HUNTER_API_KEY.")
+                    logger.error(
+                        "Hunter API authentication failed (HTTP 401). Check HUNTER_API_KEY."
+                    )
                     return None
         except Exception as err:
             logger.error("Hunter API call failed: %s; falling back to local validation", err)

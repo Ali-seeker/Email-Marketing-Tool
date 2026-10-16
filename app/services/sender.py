@@ -302,10 +302,11 @@ class SmtpSender(MailSender):
                     try:
                         server.login(clean_user, clean_pwd)
                     except smtplib.SMTPServerDisconnected as e:
-                        raise smtplib.SMTPAuthenticationError(
-                            535,
-                            b"5.7.8 Username and Password not accepted by Gmail (BadCredentials). Please verify your 16-character Google App Password and account email.",
-                        ) from e
+                        auth_err_bytes = (
+                            b"5.7.8 Username and Password not accepted by Gmail (BadCredentials). "
+                            b"Please verify your 16-char Google App Password and account email."
+                        )
+                        raise smtplib.SMTPAuthenticationError(535, auth_err_bytes) from e
                 server.send_message(email_obj)
 
             logger.info("Email to %s sent successfully via SMTP (%s)", message.to_email, msg_id)
@@ -355,6 +356,7 @@ def is_live_mode_active(db: Session | None = None) -> bool:
     """Return whether LIVE_MODE is currently enabled via DB override or .env."""
     if db is not None:
         from sqlalchemy import select
+
         from app.models.setting import Setting
         val = db.scalar(select(Setting.value).where(Setting.key == "LIVE_MODE"))
         if val is not None:

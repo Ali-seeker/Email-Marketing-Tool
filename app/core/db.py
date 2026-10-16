@@ -162,13 +162,20 @@ def init_db(target_engine: Engine | None = None) -> None:
             pass
 
         try:
-            conn.execute(text("ALTER TABLE leads ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+            conn.execute(
+                text("ALTER TABLE leads ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)")
+            )
             conn.commit()
         except Exception:
             pass
 
         try:
-            conn.execute(text("ALTER TABLE email_messages ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+            conn.execute(
+                text(
+                    "ALTER TABLE email_messages ADD COLUMN mailbox_id "
+                    "INTEGER REFERENCES mailboxes(id)"
+                )
+            )
             conn.commit()
         except Exception:
             pass
@@ -180,7 +187,9 @@ def init_db(target_engine: Engine | None = None) -> None:
             pass
 
         try:
-            conn.execute(text("ALTER TABLE replies ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+            conn.execute(
+                text("ALTER TABLE replies ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)")
+            )
             conn.commit()
         except Exception:
             pass
@@ -188,6 +197,7 @@ def init_db(target_engine: Engine | None = None) -> None:
     # Auto-seed default mailbox from .env if mailboxes table is empty
     with Session(eng) as s:
         from sqlalchemy import select
+
         from app.models.mailbox import Mailbox
 
         has_any = s.scalar(select(Mailbox).limit(1))
