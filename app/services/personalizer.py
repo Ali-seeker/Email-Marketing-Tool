@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import Clock, system_clock
@@ -304,15 +304,22 @@ def personalize_lead(
     if now_dt.tzinfo is None:
         now_dt = now_dt.replace(tzinfo=UTC)
 
+    has_website = bool(lead.website and lead.website.strip())
+
     # 1. Existing personal_note check (CSV-provided or manually edited)
     if lead.personal_note and lead.personal_note.strip():
         logger.info("Preserving existing personal note for lead #%d (%s)", lead.id, lead.email)
         if not getattr(lead, "pitch_angle", None):
-            lead.pitch_angle = "automation"
-        if not getattr(lead, "offered_service", None):
-            lead.offered_service = settings.DEFAULT_SERVICE
-        if not getattr(lead, "example_result", None):
-            lead.example_result = settings.DEFAULT_EXAMPLE_RESULT
+            if not has_website:
+                lead.pitch_angle = "website"
+                lead.offered_service = "modern, high-performing websites and web applications"
+                lead.example_result = (
+                    "turning digital visitors into qualified inbound leads consistently"
+                )
+            else:
+                lead.pitch_angle = "automation"
+                lead.offered_service = settings.DEFAULT_SERVICE
+                lead.example_result = settings.DEFAULT_EXAMPLE_RESULT
         if lead.status in (LeadStatus.NEW.value, LeadStatus.VALID.value):
             lead.status = (
                 LeadStatus.APPROVED.value if auto_approve else LeadStatus.PERSONALIZED.value
@@ -480,8 +487,9 @@ def personalize_campaign(
     fetcher: WebFetcher,
     llm: LlmClient,
     clock: Clock | None = None,
+    limit: int | None = None,
 ) -> dict[str, int]:
-    """Personalize all eligible leads in a campaign.
+    """Personalize eligible leads in a campaign with optional batch capping.
 
     Args:
         campaign_name_or_id: Target campaign name or ID.
@@ -489,6 +497,7 @@ def personalize_campaign(
         fetcher: WebFetcher implementation.
         llm: LlmClient implementation.
         clock: Optional Clock implementation.
+        limit: Optional maximum batch size to prevent timeouts.
 
     Returns:
         Summary counts dictionary.
@@ -503,18 +512,25 @@ def personalize_campaign(
     if not campaign:
         raise ValueError(f"Campaign '{campaign_name_or_id}' not found")
 
-    leads = db.scalars(
-        select(Lead).where(
-            Lead.campaign_id == campaign.id,
-            Lead.status.in_((LeadStatus.VALID.value, LeadStatus.NEW.value)),
-        )
-    ).all()
+    base_stmt = select(Lead).where(
+        Lead.campaign_id == campaign.id,
+        Lead.status.in_((LeadStatus.VALID.value, LeadStatus.NEW.value)),
+    )
+    total_eligible = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
+
+    stmt = base_stmt.order_by(Lead.id.asc())
+    if limit is not None and limit > 0:
+        stmt = stmt.limit(limit)
+
+    leads = db.scalars(stmt).all()
 
     stats = {
         "total": len(leads),
         "personalized": 0,
         "needs_manual_note": 0,
         "preserved": 0,
+        "capped": 1 if (limit and total_eligible > len(leads)) else 0,
+        "remaining": max(0, total_eligible - len(leads)),
     }
 
     for lead in leads:

@@ -130,6 +130,37 @@ def list_leads(
     )
 
 
+@router.get("/summary")
+def get_leads_summary(
+    campaign_id: Annotated[int | None, Query()] = None,
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    """Retrieve aggregate status counts for leads (scoped to campaign if provided)."""
+    stmt = select(Lead.status, func.count(Lead.id))
+    if campaign_id is not None:
+        stmt = stmt.where(Lead.campaign_id == campaign_id)
+    stmt = stmt.group_by(Lead.status)
+    rows = db.execute(stmt).all()
+    counts = {r[0]: r[1] for r in rows}
+    total = sum(counts.values())
+
+    return {
+        "total": total,
+        "new": counts.get(LeadStatus.NEW.value, 0),
+        "valid": counts.get(LeadStatus.VALID.value, 0),
+        "invalid": counts.get(LeadStatus.INVALID.value, 0),
+        "personalized": counts.get(LeadStatus.PERSONALIZED.value, 0),
+        "approved": counts.get(LeadStatus.APPROVED.value, 0),
+        "needs_manual_note": counts.get(LeadStatus.NEEDS_MANUAL_NOTE.value, 0),
+        "in_sequence": counts.get(LeadStatus.IN_SEQUENCE.value, 0),
+        "replied": counts.get(LeadStatus.REPLIED.value, 0),
+        "bounced": counts.get(LeadStatus.BOUNCED.value, 0),
+        "unsubscribed": counts.get(LeadStatus.UNSUBSCRIBED.value, 0),
+        "completed": counts.get(LeadStatus.COMPLETED.value, 0),
+        "won": counts.get(LeadStatus.WON.value, 0),
+    }
+
+
 @router.get("/{lead_id}", response_model=LeadDetailResponse)
 def get_lead_detail(
     lead_id: int,
@@ -439,22 +470,42 @@ def bulk_validate_leads(
     campaign_id: Annotated[int | None, Query()] = None,
     campaign_name: Annotated[str | None, Query()] = None,
     allow_risky: Annotated[bool | None, Query()] = None,
+    limit: Annotated[
+        int | None,
+        Query(ge=1, le=500, description="Max batch limit to prevent browser timeouts"),
+    ] = 100,
     db: Session = Depends(get_db),
     clock: Clock = Depends(get_clock),
 ) -> LeadBulkValidateResponse:
-    """Bulk validate unverified 'new' leads using email validator service."""
+    """Bulk validate unverified 'new' leads using email validator service with safe batch capping."""
     summary = validate_leads(
         db=db,
         campaign_name=campaign_name,
         campaign_id=campaign_id,
         allow_risky=allow_risky,
+        limit=limit,
         clock=clock,
     )
+    if summary.capped:
+        msg = (
+            f"Validated safe batch of {summary.total_checked} leads ({summary.valid_count} valid, "
+            f"{summary.invalid_count} invalid). {summary.remaining_unvalidated} remaining in pool "
+            f"for automated daily JIT dispatch."
+        )
+    else:
+        msg = (
+            f"Validated {summary.total_checked} leads: {summary.valid_count} valid, "
+            f"{summary.invalid_count} invalid, {summary.risk_risky} risky."
+        )
+
     return LeadBulkValidateResponse(
         total_checked=summary.total_checked,
         valid_count=summary.valid_count,
         invalid_count=summary.invalid_count,
         risky_count=summary.risk_risky,
+        capped=summary.capped,
+        remaining_count=summary.remaining_unvalidated,
+        message=msg,
     )
 
 
@@ -462,10 +513,14 @@ def bulk_validate_leads(
 def bulk_personalize_leads(
     campaign_id: Annotated[int | None, Query()] = None,
     campaign_name: Annotated[str | None, Query()] = None,
+    limit: Annotated[
+        int | None,
+        Query(ge=1, le=500, description="Max batch limit to prevent browser timeouts"),
+    ] = 100,
     db: Session = Depends(get_db),
     clock: Clock = Depends(get_clock),
 ) -> PersonalizeResponse:
-    """Run personalization pipeline across valid/new leads to generate AI draft observations."""
+    """Run personalization pipeline across valid/new leads with safe batch capping."""
     from app.core.config import get_settings
     from app.services.fetcher import RealFetcher
     from app.services.llm import get_llm_client
@@ -484,6 +539,7 @@ def bulk_personalize_leads(
                 fetcher=fetcher,
                 llm=llm,
                 clock=clock,
+                limit=limit,
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -498,29 +554,58 @@ def bulk_personalize_leads(
                 )
             )
         ).all()
-        stats = {"total": 0, "personalized": 0, "preserved": 0, "needs_manual_note": 0}
+        stats = {
+            "total": 0,
+            "personalized": 0,
+            "preserved": 0,
+            "needs_manual_note": 0,
+            "capped": 0,
+            "remaining": 0,
+        }
+        remaining_limit = limit
         for c in campaigns:
+            c_limit = remaining_limit if remaining_limit is not None else None
             c_stats = personalize_campaign(
                 campaign_name_or_id=c.id,
                 db=db,
                 fetcher=fetcher,
                 llm=llm,
                 clock=clock,
+                limit=c_limit,
             )
-            for k in stats:
+            for k in ("total", "personalized", "preserved", "needs_manual_note", "remaining"):
                 stats[k] += c_stats.get(k, 0)
+            if c_stats.get("capped", 0) > 0:
+                stats["capped"] = 1
+            if remaining_limit is not None:
+                remaining_limit = max(0, remaining_limit - c_stats.get("total", 0))
+                if remaining_limit <= 0:
+                    break
+
+    is_capped = bool(stats.get("capped", 0) > 0)
+    rem = stats.get("remaining", 0)
+    if is_capped:
+        msg = (
+            f"Processed safe batch of {stats['total']} leads ({rem} remaining in pool for "
+            f"automated daily JIT): {stats['personalized']} personalized, {stats['preserved']} preserved, "
+            f"{stats['needs_manual_note']} need review."
+        )
+    else:
+        msg = (
+            f"Processed {stats['total']} leads: "
+            f"{stats['personalized']} personalized, "
+            f"{stats['preserved']} preserved, "
+            f"{stats['needs_manual_note']} need manual review."
+        )
 
     return PersonalizeResponse(
         total=stats["total"],
         personalized=stats["personalized"],
         preserved=stats["preserved"],
         needs_manual_note=stats["needs_manual_note"],
-        message=(
-            f"Processed {stats['total']} leads: "
-            f"{stats['personalized']} personalized, "
-            f"{stats['preserved']} preserved, "
-            f"{stats['needs_manual_note']} need manual review."
-        ),
+        capped=is_capped,
+        remaining_count=rem,
+        message=msg,
     )
 
 

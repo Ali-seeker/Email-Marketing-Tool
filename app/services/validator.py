@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import Clock, system_clock
@@ -168,6 +168,8 @@ class ValidationSummary:
     risk_risky: int = 0
     risk_bad: int = 0
     details: list[dict[str, str]] = field(default_factory=list)
+    capped: bool = False
+    remaining_unvalidated: int = 0
 
 
 def extract_domain_from_url(url: str | None) -> str | None:
@@ -326,8 +328,9 @@ def validate_leads(
     verifier: EmailVerifier | None = None,
     clock: Clock | None = None,
     campaign_id: int | None = None,
+    limit: int | None = None,
 ) -> ValidationSummary:
-    """Validate all leads in status 'new' for a campaign or globally.
+    """Validate leads in status 'new' for a campaign or globally with optional batch capping.
 
     Args:
         db: SQLAlchemy session.
@@ -337,6 +340,7 @@ def validate_leads(
         verifier: Optional external verifier (defaults to NullVerifier).
         clock: Optional Clock (defaults to system_clock).
         campaign_id: Optional campaign ID filter.
+        limit: Optional maximum batch size to prevent timeouts.
 
     Returns:
         ValidationSummary with counts and details.
@@ -349,14 +353,25 @@ def validate_leads(
         allow_risky if allow_risky is not None else get_effective_allow_risky(db)
     )
 
-    stmt = select(Lead).where(Lead.status == LeadStatus.NEW.value)
+    base_stmt = select(Lead).where(Lead.status == LeadStatus.NEW.value)
     if campaign_id:
-        stmt = stmt.where(Lead.campaign_id == campaign_id)
+        base_stmt = base_stmt.where(Lead.campaign_id == campaign_id)
     elif campaign_name:
-        stmt = stmt.join(Campaign).where(Campaign.name == campaign_name)
+        base_stmt = base_stmt.join(Campaign).where(Campaign.name == campaign_name)
+
+    total_unverified = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
+
+    stmt = base_stmt.order_by(Lead.id.asc())
+    if limit is not None and limit > 0:
+        stmt = stmt.limit(limit)
 
     leads = db.scalars(stmt).all()
-    summary = ValidationSummary(total_checked=len(leads))
+    is_capped = bool(limit and total_unverified > len(leads))
+    summary = ValidationSummary(
+        total_checked=len(leads),
+        capped=is_capped,
+        remaining_unvalidated=max(0, total_unverified - len(leads)),
+    )
 
     now_dt = active_clock.now()
 

@@ -17,6 +17,7 @@ import {
   Clock,
   Sparkles,
   ShieldCheck,
+  ShieldAlert,
   Loader2,
   ChevronDown,
   ChevronUp,
@@ -75,6 +76,12 @@ export function LeadsPage() {
   const [uploadCampaign, setUploadCampaign] = useState(currentCampaign?.name || '')
   const [uploadReport, setUploadReport] = useState<ImportReport | null>(null)
 
+  // Safety Guard Confirmation Modal State
+  const [safetyModal, setSafetyModal] = useState<{
+    action: 'validate' | 'personalize'
+    count: number
+  } | null>(null)
+
   // Auto-open upload dialog if ?openUpload=1 is passed from Campaigns page
   useEffect(() => {
     if (searchParams.get('openUpload') === '1') {
@@ -103,6 +110,13 @@ export function LeadsPage() {
         country: countryFilter || undefined,
         campaign_id: campaignIdParam,
       }),
+    refetchInterval: 3000,
+  })
+
+  // 1b. Fetch Campaign-wide Lead Status Summary (Accurate across all pages)
+  const { data: summaryData } = useQuery({
+    queryKey: ['leadsSummary', campaignIdParam],
+    queryFn: () => api.leads.summary({ campaign_id: campaignIdParam }),
     refetchInterval: 3000,
   })
 
@@ -218,16 +232,19 @@ export function LeadsPage() {
     },
   })
 
-  // Bulk Validate Mutation (Scoped to campaignIdParam if active)
+  // Bulk Validate Mutation (Scoped to campaignIdParam if active with safe limit)
   const validateMutation = useMutation({
-    mutationFn: () => api.leads.bulkValidate({ campaign_id: campaignIdParam }),
+    mutationFn: () => api.leads.bulkValidate({ campaign_id: campaignIdParam, limit: 100 }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['leadsSummary'] })
       queryClient.invalidateQueries({ queryKey: ['funnel'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       toast({
-        title: currentCampaign ? `Validation Complete (${currentCampaign.name})` : 'Validation Complete',
-        message: `Evaluated ${data.total_checked} leads: ${data.valid_count} valid, ${data.invalid_count} invalid, ${data.risky_count ?? 0} risky.`,
+        title: data.capped
+          ? 'Safe Batch Validated'
+          : (currentCampaign ? `Validation Complete (${currentCampaign.name})` : 'Validation Complete'),
+        message: data.message || `Evaluated ${data.total_checked} leads: ${data.valid_count} valid, ${data.invalid_count} invalid, ${data.risky_count ?? 0} risky.`,
         type: 'success',
       })
     },
@@ -236,16 +253,19 @@ export function LeadsPage() {
     },
   })
 
-  // Bulk Personalize / Generate Drafts Mutation (Scoped to campaignIdParam if active)
+  // Bulk Personalize / Generate Drafts Mutation (Scoped to campaignIdParam if active with safe limit)
   const personalizeMutation = useMutation({
-    mutationFn: () => api.leads.personalize({ campaign_id: campaignIdParam }),
+    mutationFn: () => api.leads.personalize({ campaign_id: campaignIdParam, limit: 100 }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['leadsSummary'] })
       queryClient.invalidateQueries({ queryKey: ['funnel'] })
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] })
       toast({
-        title: currentCampaign ? `Drafts Generated (${currentCampaign.name})` : 'Drafts Generated',
+        title: data.capped
+          ? 'Safe Batch Drafted'
+          : (currentCampaign ? `Drafts Generated (${currentCampaign.name})` : 'Drafts Generated'),
         message: data.message,
         type: 'success',
       })
@@ -367,8 +387,48 @@ export function LeadsPage() {
   }
 
   const leads = leadsData?.items || []
-  const newCount = leads.filter((ld) => ld.status === 'new').length
-  const validCount = leads.filter((ld) => ld.status === 'valid').length
+  // Campaign-wide totals (not limited to the 50 items displayed on the current page)
+  const totalCampaignLeads = summaryData ? summaryData.total : (leadsData?.total ?? 0)
+  const newCount = summaryData ? summaryData.new : leads.filter((ld) => ld.status === 'new').length
+  const validCount = summaryData ? summaryData.valid : leads.filter((ld) => ld.status === 'valid').length
+  const invalidCount = summaryData ? summaryData.invalid : leads.filter((ld) => ld.status === 'invalid').length
+  const personalizedCount = summaryData ? (summaryData.personalized + summaryData.approved) : leads.filter((ld) => ld.status === 'personalized' || ld.status === 'approved').length
+
+  const handleTriggerValidate = () => {
+    // Check how many leads actually NEED validation across the campaign
+    const pendingValidation = summaryData ? summaryData.new : newCount
+    if (pendingValidation <= 0) {
+      toast({
+        title: 'All Leads Validated',
+        message: 'There are no unverified (New) leads waiting in this campaign.',
+        type: 'info',
+      })
+      return
+    }
+    if (pendingValidation > 100) {
+      setSafetyModal({ action: 'validate', count: pendingValidation })
+    } else {
+      validateMutation.mutate()
+    }
+  }
+
+  const handleTriggerPersonalize = () => {
+    // Check how many leads actually NEED draft generation across the campaign
+    const pendingDrafts = summaryData ? summaryData.valid : validCount
+    if (pendingDrafts <= 0) {
+      toast({
+        title: 'No Valid Leads',
+        message: 'There are no Valid leads waiting for draft generation in this campaign.',
+        type: 'info',
+      })
+      return
+    }
+    if (pendingDrafts > 100) {
+      setSafetyModal({ action: 'personalize', count: pendingDrafts })
+    } else {
+      personalizeMutation.mutate()
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -410,7 +470,7 @@ export function LeadsPage() {
           <button
             type="button"
             disabled={validateMutation.isPending}
-            onClick={() => validateMutation.mutate()}
+            onClick={handleTriggerValidate}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs transition-colors disabled:opacity-60 cursor-pointer"
             title={
               currentCampaign
@@ -430,7 +490,7 @@ export function LeadsPage() {
           <button
             type="button"
             disabled={personalizeMutation.isPending}
-            onClick={() => personalizeMutation.mutate()}
+            onClick={handleTriggerPersonalize}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shadow-xs transition-colors disabled:opacity-60 cursor-pointer"
             title={
               currentCampaign
@@ -472,21 +532,27 @@ export function LeadsPage() {
         </div>
       </div>
 
-      {/* Active Campaign Filter Banner */}
+      {/* Active Campaign Filter Banner with Campaign-Wide Breakdown */}
       {currentCampaign && (
         <div className="flex items-center justify-between p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-xs text-indigo-700 dark:text-indigo-300">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <span className="font-semibold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-              Active Campaign Filter:
+              Campaign:
             </span>
             <span className="font-bold underline text-foreground">{currentCampaign.name}</span>
             <span className="text-[10px] bg-indigo-500/20 px-1.5 py-0.5 rounded-sm font-mono">
               ID #{currentCampaign.id}
             </span>
-            <span className="text-[11px] text-muted-foreground">
-              (Table, Validation, and Draft Generation scoped strictly to this campaign)
-            </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium ml-1 flex-wrap">
+              <span className="px-1.5 py-0.5 rounded bg-muted/60 text-foreground">Total: {totalCampaignLeads}</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300">New: {newCount}</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">Valid: {validCount}</span>
+              <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-700 dark:text-red-300">Invalid: {invalidCount}</span>
+              {personalizedCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300">Drafted: {personalizedCount}</span>
+              )}
+            </div>
           </div>
           <button
             type="button"
@@ -507,12 +573,12 @@ export function LeadsPage() {
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>
-              <strong>Step 1:</strong> You have <strong>{newCount} unverified (New) leads</strong>. Click <strong>Validate Leads</strong> to verify email syntax, disposable checks, and DNS MX records.
+              <strong>Step 1:</strong> You have <strong>{newCount} unverified (New) leads</strong> across this campaign. Click <strong>Validate Leads</strong> to verify email syntax, disposable checks, and DNS MX records.
             </span>
           </div>
           <button
             type="button"
-            onClick={() => validateMutation.mutate()}
+            onClick={handleTriggerValidate}
             disabled={validateMutation.isPending}
             className="ml-3 px-2.5 py-1 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-md shrink-0 cursor-pointer"
           >
@@ -521,7 +587,7 @@ export function LeadsPage() {
         </div>
       )}
 
-      {newCount === 0 && validCount > 0 && (
+      {validCount > 0 && (
         <div className="flex items-center justify-between p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs text-indigo-700 dark:text-indigo-400">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 shrink-0" />
@@ -531,7 +597,7 @@ export function LeadsPage() {
           </div>
           <button
             type="button"
-            onClick={() => personalizeMutation.mutate()}
+            onClick={handleTriggerPersonalize}
             disabled={personalizeMutation.isPending}
             className="ml-3 px-2.5 py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md shrink-0 cursor-pointer"
           >
@@ -1258,6 +1324,87 @@ export function LeadsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Safety Guard Confirmation Dialog for Large Batches */}
+      {safetyModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in-0"
+        >
+          <div className="bg-card w-full max-w-md rounded-lg border border-border shadow-2xl p-6 space-y-4">
+            <div className="flex items-start gap-3 border-b border-border pb-3">
+              <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-600 dark:text-amber-400 shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-foreground">
+                  Safety Guard: Large Lead Batch ({safetyModal.count.toLocaleString()} Leads)
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Protecting browser stability and avoiding API timeouts
+                </p>
+              </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground space-y-2.5 leading-relaxed bg-muted/20 p-3 rounded-md border border-border">
+              {safetyModal.action === 'validate' ? (
+                <>
+                  <p>
+                    You have <strong className="text-foreground">{safetyModal.count.toLocaleString()} unverified leads</strong> waiting in this campaign. To prevent browser timeouts, validation runs in safe batches of up to 100 leads.
+                  </p>
+                  <p>
+                    Clicking proceed will safely validate the next batch of <strong className="text-foreground">100 leads</strong> immediately.
+                  </p>
+                  <p className="text-[11px] text-primary font-medium">
+                    💡 The remaining {(safetyModal.count - 100).toLocaleString()} leads can be validated with another click, or handled automatically by the background JIT worker.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    You have <strong className="text-foreground">{safetyModal.count.toLocaleString()} valid leads</strong> waiting across this campaign. AI draft generation is split into safe batches of up to 100 leads to protect API rate limits.
+                  </p>
+                  <p>
+                    Clicking proceed will generate drafts for the next batch of <strong className="text-foreground">100 leads</strong> now.
+                  </p>
+                  <p className="text-[11px] text-primary font-medium">
+                    💡 The remaining {(safetyModal.count - 100).toLocaleString()} leads can be drafted with another click, or generated each morning by your JIT sending quota.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSafetyModal(null)}
+                className="px-3 py-1.5 text-xs font-semibold border border-border hover:bg-muted text-foreground rounded-md transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (safetyModal.action === 'validate') {
+                    validateMutation.mutate()
+                  } else {
+                    personalizeMutation.mutate()
+                  }
+                  setSafetyModal(null)
+                }}
+                className={`px-3 py-1.5 text-xs font-semibold text-white rounded-md shadow-xs transition-colors cursor-pointer ${
+                  safetyModal.action === 'validate'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
+              >
+                Proceed with Safe Batch (100 Leads)
+              </button>
+            </div>
           </div>
         </div>
       )}

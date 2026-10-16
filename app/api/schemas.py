@@ -114,6 +114,9 @@ class LeadBulkValidateResponse(BaseModel):
     valid_count: int
     invalid_count: int
     risky_count: int
+    capped: bool = False
+    remaining_count: int = 0
+    message: str | None = None
 
 
 class PersonalizeResponse(BaseModel):
@@ -122,6 +125,8 @@ class PersonalizeResponse(BaseModel):
     preserved: int
     needs_manual_note: int
     message: str
+    capped: bool = False
+    remaining_count: int = 0
 
 
 # =============================================================================

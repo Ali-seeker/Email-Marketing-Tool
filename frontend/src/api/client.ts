@@ -172,18 +172,41 @@ export const api = {
       request<Lead>(`/api/v1/leads/${id}/mark-not-interested`, { method: 'POST' }),
     skipStep: (id: number) =>
       request<Lead>(`/api/v1/leads/${id}/skip-step`, { method: 'POST' }),
-    bulkValidate: (params?: { campaign_id?: number; campaign_name?: string; allow_risky?: boolean }) =>
-      request<{ total_checked: number; valid_count: number; invalid_count: number; risky_count: number }>(
-        `/api/v1/leads/bulk-validate${buildQuery(params)}`,
-        { method: 'POST' }
-      ),
-    personalize: (params?: { campaign_id?: number; campaign_name?: string }) =>
+    summary: (params?: { campaign_id?: number }) =>
+      request<{
+        total: number
+        new: number
+        valid: number
+        invalid: number
+        personalized: number
+        approved: number
+        needs_manual_note: number
+        in_sequence: number
+        replied: number
+        bounced: number
+        unsubscribed: number
+        completed: number
+        won: number
+      }>(`/api/v1/leads/summary${buildQuery(params)}`),
+    bulkValidate: (params?: { campaign_id?: number; campaign_name?: string; allow_risky?: boolean; limit?: number }) =>
+      request<{
+        total_checked: number
+        valid_count: number
+        invalid_count: number
+        risky_count: number
+        capped?: boolean
+        remaining_count?: number
+        message?: string
+      }>(`/api/v1/leads/bulk-validate${buildQuery(params)}`, { method: 'POST' }),
+    personalize: (params?: { campaign_id?: number; campaign_name?: string; limit?: number }) =>
       request<{
         total: number
         personalized: number
         preserved: number
         needs_manual_note: number
         message: string
+        capped?: boolean
+        remaining_count?: number
       }>(`/api/v1/leads/personalize${buildQuery(params)}`, { method: 'POST' }),
 
   },
