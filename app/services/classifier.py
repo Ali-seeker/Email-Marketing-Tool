@@ -442,6 +442,33 @@ def classify_inbound_mail(
             is_positive_hint=False,
         )
 
+    # Ignore ColdReach internal verification emails
+    if mail.subject.strip().lower().startswith("[coldreach]"):
+        return ClassificationResult(
+            classification=InboundClassification.UNRELATED,
+            matched_lead=None,
+            matched_message=None,
+            bounce_recipient=None,
+            snippet="",
+            is_positive_hint=False,
+        )
+
+    # If sender and recipient are the same email (self-test) without reply markers, ignore outgoing copy
+    if (
+        mail.from_email.strip().lower() == mail.to_email.strip().lower()
+        and not mail.in_reply_to
+        and not mail.references
+        and not mail.subject.strip().lower().startswith("re:")
+    ):
+        return ClassificationResult(
+            classification=InboundClassification.UNRELATED,
+            matched_lead=None,
+            matched_message=None,
+            bounce_recipient=None,
+            snippet="",
+            is_positive_hint=False,
+        )
+
     # 3. Check Auto-Reply
     if is_auto_reply(mail):
         return ClassificationResult(

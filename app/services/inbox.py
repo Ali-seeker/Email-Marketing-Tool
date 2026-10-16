@@ -275,6 +275,11 @@ class ImapReader(MailboxReader):
                 return []
 
             uid_strs = data[0].split()
+            # If since_uid was 0 (first time polling this mailbox), limit to the most recent 50 emails
+            # so we don't fetch an entire years-old mailbox history over network.
+            if since_uid == 0 and len(uid_strs) > 50:
+                uid_strs = uid_strs[-50:]
+
             for uid_bytes in uid_strs:
                 try:
                     uid_int = int(uid_bytes)
@@ -666,14 +671,26 @@ def poll_inbox_and_process(
     clk = clock or system_clock
     now = clk.now()
 
-    last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID"))
+    mb_id = getattr(getattr(reader, "mailbox", None), "id", None)
+    if mb_id is not None:
+        uid_key = f"LAST_INBOX_UID_MB_{mb_id}"
+        last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == uid_key))
+        if last_uid_setting is None and mb_id == 1:
+            # Fall back to legacy global key for primary mailbox if present
+            last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID"))
+    else:
+        uid_key = "LAST_INBOX_UID"
+        last_uid_setting = db.scalar(select(Setting.value).where(Setting.key == uid_key))
+
     last_uid = int(last_uid_setting) if last_uid_setting and last_uid_setting.isdigit() else 0
 
     new_mails = reader.fetch_new(since_uid=last_uid)
     for mail in new_mails:
         process_incoming_mail(mail, db, clock=clk)
         last_uid = max(last_uid, mail.uid)
-        db.merge(Setting(key="LAST_INBOX_UID", value=str(last_uid)))
+        db.merge(Setting(key=uid_key, value=str(last_uid)))
+        if uid_key != "LAST_INBOX_UID" and mb_id == 1:
+            db.merge(Setting(key="LAST_INBOX_UID", value=str(last_uid)))
         db.commit()
 
     stats = calculate_bounce_rates(db, now)

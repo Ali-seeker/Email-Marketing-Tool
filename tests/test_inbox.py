@@ -481,3 +481,49 @@ def test_worker_inbox_integration_and_bounce_rate_stop(
     stats = calculate_bounce_rates(db, clock.now())
     assert "bounce_rate_7d" in stats
     assert "bounce_rate_last_100" in stats
+
+
+def test_multi_mailbox_uid_checkpoints(inbox_db: tuple[Session, sessionmaker]) -> None:
+    """Verify that multiple active mailboxes maintain isolated UID checkpoints."""
+    from unittest.mock import MagicMock
+    from app.models.mailbox import Mailbox
+
+    db, _ = inbox_db
+    clock = FakeClock(datetime(2026, 10, 12, 12, 0, tzinfo=UTC))
+
+    mb1 = MagicMock(spec=Mailbox)
+    mb1.id = 1
+    reader1 = FakeMailboxReader()
+    reader1.mailbox = mb1
+
+    mb2 = MagicMock(spec=Mailbox)
+    mb2.id = 2
+    reader2 = FakeMailboxReader()
+    reader2.mailbox = mb2
+
+    # Mailbox 1 has 5 messages (UIDs 1 to 5)
+    for i in range(1, 6):
+        reader1.add_message(f"From: user{i}@example.com\nTo: mb1@test.com\nSubject: Hi {i}\n\nBody".encode())
+
+    # Mailbox 2 has 3 messages (UIDs 1 to 3)
+    for i in range(1, 4):
+        reader2.add_message(f"From: user{i}@example.com\nTo: mb2@test.com\nSubject: Hi {i}\n\nBody".encode())
+
+    # Poll Mailbox 1
+    count1, _ = poll_inbox_and_process(reader1, db, clock=clock)
+    assert count1 == 5
+    assert db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID_MB_1")) == "5"
+
+    # Poll Mailbox 2 - should NOT be blocked by Mailbox 1's UID 5
+    count2, _ = poll_inbox_and_process(reader2, db, clock=clock)
+    assert count2 == 3
+    assert db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID_MB_2")) == "3"
+
+    # Add 2 more messages to Mailbox 2 (UIDs 4 and 5)
+    for i in range(4, 6):
+        reader2.add_message(f"From: user{i}@example.com\nTo: mb2@test.com\nSubject: Hi {i}\n\nBody".encode())
+
+    count2_next, _ = poll_inbox_and_process(reader2, db, clock=clock)
+    assert count2_next == 2
+    assert db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID_MB_2")) == "5"
+
