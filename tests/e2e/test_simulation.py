@@ -71,9 +71,7 @@ def generate_400_lead_csv() -> str:
     - 10 invalid email syntax rows
     - 20 suppressed domain/email rows
     """
-    lines = [
-        "email,first_name,last_name,company,website,title,country,timezone,personal_note"
-    ]
+    lines = ["email,first_name,last_name,company,website,title,country,timezone,personal_note"]
     tz_list = [
         ("US", "America/New_York"),
         ("US", "America/Los_Angeles"),
@@ -305,7 +303,13 @@ def test_30_day_simulation_and_invariants():
         approved_leads = db.scalars(
             select(Lead).where(
                 Lead.campaign_id == campaign.id,
-                Lead.status.in_([LeadStatus.VALID.value, LeadStatus.PERSONALIZED.value, LeadStatus.APPROVED.value]),
+                Lead.status.in_(
+                    [
+                        LeadStatus.VALID.value,
+                        LeadStatus.PERSONALIZED.value,
+                        LeadStatus.APPROVED.value,
+                    ]
+                ),
                 Lead.personal_note.is_not(None),
             )
         ).all()
@@ -400,34 +404,32 @@ def test_30_day_simulation_and_invariants():
                         # ASSERT INVARIANTS CONTINUOUSLY
                         # =========================================================
                         # 1. Never more than ramp-up cap per day and never more than 30
-                        assert (
-                            daily_sends[local_send_date] <= expected_day_cap
-                        ), f"Daily sends {daily_sends[local_send_date]} exceeded cap {expected_day_cap} on {local_send_date}"
-                        assert (
-                            daily_sends[local_send_date] <= 30
-                        ), f"Daily sends {daily_sends[local_send_date]} exceeded hard limit 30"
+                        assert daily_sends[local_send_date] <= expected_day_cap, (
+                            f"Daily sends {daily_sends[local_send_date]} exceeded cap {expected_day_cap} on {local_send_date}"
+                        )
+                        assert daily_sends[local_send_date] <= 30, (
+                            f"Daily sends {daily_sends[local_send_date]} exceeded hard limit 30"
+                        )
 
                         # 2. Never two sends closer than MIN_GAP_SECONDS (120s)
                         if last_dispatch_time is not None:
                             gap = (sent_dt - last_dispatch_time).total_seconds()
-                            assert (
-                                gap >= 120
-                            ), f"Send gap violation: {gap}s < 120s between dispatches"
+                            assert gap >= 120, (
+                                f"Send gap violation: {gap}s < 120s between dispatches"
+                            )
                         last_dispatch_time = sent_dt
 
                         # 3. Every send inside lead's send window and allowed weekday
-                        lead_tz = (
-                            ZoneInfo(lead.timezone) if lead.timezone else mailbox_tz
-                        )
+                        lead_tz = ZoneInfo(lead.timezone) if lead.timezone else mailbox_tz
                         lead_local_time = sent_dt.astimezone(lead_tz)
-                        assert (
-                            lead_local_time.weekday() < 5
-                        ), f"Dispatched on weekend ({lead_local_time.strftime('%A')}) for {lead.email}"
+                        assert lead_local_time.weekday() < 5, (
+                            f"Dispatched on weekend ({lead_local_time.strftime('%A')}) for {lead.email}"
+                        )
                         w_start, w_end = get_send_window(db)
                         lead_hour = lead_local_time.time()
-                        assert (
-                            w_start <= lead_hour <= w_end
-                        ), f"Sent outside lead's window: {lead_hour} not between {w_start} and {w_end}"
+                        assert w_start <= lead_hour <= w_end, (
+                            f"Sent outside lead's window: {lead_hour} not between {w_start} and {w_end}"
+                        )
 
                         # 4. Never to stopped lead
                         assert lead.status not in (
@@ -437,37 +439,31 @@ def test_30_day_simulation_and_invariants():
                         ), f"Dispatched to stopped lead in status {lead.status}"
 
                         # 5. Never same step twice to same lead
-                        assert (
-                            msg.step not in sent_lead_steps[lead.id]
-                        ), f"Duplicate step {msg.step} dispatched to lead {lead.id}"
+                        assert msg.step not in sent_lead_steps[lead.id], (
+                            f"Duplicate step {msg.step} dispatched to lead {lead.id}"
+                        )
                         sent_lead_steps[lead.id].add(msg.step)
                         lead_step_sent_times[(lead.id, msg.step)] = sent_dt
 
                         # 6. Follow-ups only after configured delay from previous step
                         if msg.step > 1:
-                            prev_sent_time = lead_step_sent_times.get(
-                                (lead.id, msg.step - 1)
+                            prev_sent_time = lead_step_sent_times.get((lead.id, msg.step - 1))
+                            assert prev_sent_time is not None, (
+                                f"Step {msg.step} sent before Step {msg.step - 1}"
                             )
-                            assert (
-                                prev_sent_time is not None
-                            ), f"Step {msg.step} sent before Step {msg.step - 1}"
                             expected_delay_days = DEFAULT_STEP_DELAYS.get(msg.step, 4)
-                            diff_days = (
-                                sent_dt.date() - prev_sent_time.date()
-                            ).days
-                            assert (
-                                diff_days >= expected_delay_days
-                            ), f"Follow-up step {msg.step} sent after {diff_days}d (min required: {expected_delay_days}d)"
+                            diff_days = (sent_dt.date() - prev_sent_time.date()).days
+                            assert diff_days >= expected_delay_days, (
+                                f"Follow-up step {msg.step} sent after {diff_days}d (min required: {expected_delay_days}d)"
+                            )
 
                         # 7. No email without approved personal note
-                        assert (
-                            lead.personal_note and lead.personal_note.strip()
-                        ), f"Email {msg.id} dispatched without personal note on lead {lead.id}"
+                        assert lead.personal_note and lead.personal_note.strip(), (
+                            f"Email {msg.id} dispatched without personal note on lead {lead.id}"
+                        )
 
                         # Generate potential simulated response
-                        resp_mail = mailbox_generator.generate_response_for_sent(
-                            msg, lead, sent_dt
-                        )
+                        resp_mail = mailbox_generator.generate_response_for_sent(msg, lead, sent_dt)
                         if resp_mail:
                             fake_mailbox.add_message(resp_mail)
 
@@ -481,20 +477,11 @@ def test_30_day_simulation_and_invariants():
         total_sent_all_month = sum(daily_sends.values())
         total_replies = db.scalar(select(func.count(Reply.id))) or 0
         total_bounces = (
-            db.scalar(
-                select(func.count(Lead.id)).where(
-                    Lead.status == LeadStatus.BOUNCED.value
-                )
-            )
+            db.scalar(select(func.count(Lead.id)).where(Lead.status == LeadStatus.BOUNCED.value))
             or 0
         )
         total_positive = (
-            db.scalar(
-                select(func.count(Reply.id)).where(
-                    Reply.is_positive_hint.is_(True)
-                )
-            )
-            or 0
+            db.scalar(select(func.count(Reply.id)).where(Reply.is_positive_hint.is_(True))) or 0
         )
 
         print("\n" + "=" * 65)
@@ -517,9 +504,7 @@ def test_bounce_spike_killswitch_trip_and_resume():
     engine = create_engine("sqlite:///:memory:")
     session_factory = setup_simulation_db(engine)
 
-    fake_clock = FakeClock(
-        datetime(2026, 11, 10, 9, 0, 0, tzinfo=ZoneInfo("America/New_York"))
-    )
+    fake_clock = FakeClock(datetime(2026, 11, 10, 9, 0, 0, tzinfo=ZoneInfo("America/New_York")))
     fake_sender = FakeSender()
     fake_mailbox = FakeMailboxReader()
 
@@ -561,9 +546,7 @@ def test_bounce_spike_killswitch_trip_and_resume():
 
         # Process messages, injecting hard bounces on 10% of sends
         scheduled_msgs = db.scalars(
-            select(EmailMessage).where(
-                EmailMessage.status == EmailMessageStatus.SCHEDULED.value
-            )
+            select(EmailMessage).where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
         ).all()
 
         for idx, msg in enumerate(scheduled_msgs):
@@ -602,25 +585,21 @@ def test_bounce_spike_killswitch_trip_and_resume():
 
         # Assert kill-switch tripped
         assert is_killswitch_active(db) is True, "Killswitch failed to trip during bounce spike"
-        assert (
-            emails_after_spike <= 20
-        ), f"Too many emails dispatched after spike began: {emails_after_spike} > 20"
+        assert emails_after_spike <= 20, (
+            f"Too many emails dispatched after spike began: {emails_after_spike} > 20"
+        )
 
         # Assert that with kill-switch active, worker refuses to send any email
         unsent_msg = db.scalar(
-            select(EmailMessage).where(
-                EmailMessage.status == EmailMessageStatus.SCHEDULED.value
-            )
+            select(EmailMessage).where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
         )
         if unsent_msg:
-            result = worker.process_message(
-                unsent_msg.id, db, fake_sender, fake_clock.now()
-            )
+            result = worker.process_message(unsent_msg.id, db, fake_sender, fake_clock.now())
             assert result is False, "Worker should refuse dispatch when killswitch is active"
             db.refresh(unsent_msg)
-            assert (
-                unsent_msg.status == EmailMessageStatus.SCHEDULED.value
-            ), "Unsent message status should not change"
+            assert unsent_msg.status == EmailMessageStatus.SCHEDULED.value, (
+                "Unsent message status should not change"
+            )
 
         # Test Resumption Flow
         resume_res = resume_sending(

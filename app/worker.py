@@ -42,7 +42,6 @@ from app.services.notifier import LogNotifier, Notifier, send_daily_summary
 from app.services.planner import (
     get_mailbox_tz,
     get_setting,
-    plan_day,
 )
 from app.services.safety import (
     evaluate_and_enforce_safety,
@@ -187,6 +186,7 @@ class Worker:
     def is_live(self, db: Session | None = None) -> bool:
         """Check whether live sending is active via DB override or .env."""
         from app.services.sender import is_live_mode_active
+
         return is_live_mode_active(db)
 
     def get_inbox_reader(self, db: Session | None = None) -> MailboxReader:
@@ -615,11 +615,23 @@ class Worker:
                 logger.warning("Global kill-switch active. Worker cycle skipped.")
                 return 0
 
-            # 4. Auto-plan and schedule any approved due emails
+            # 4. Auto JIT personalization and dispatch scheduling (runs 1-2 mins before send window)
             try:
-                mailbox_tz = get_mailbox_tz(db)
-                today_date = now.astimezone(mailbox_tz).date()
-                plan_day(target_date=today_date, db=db, clock=self.clock)
+                from app.services.jit_planner import (
+                    is_daily_refresh_due,
+                    reconcile_and_refresh_daily_schedule,
+                )
+
+                if is_daily_refresh_due(db, clock=self.clock):
+                    mailbox_tz = get_mailbox_tz(db)
+                    today_date = now.astimezone(mailbox_tz).date()
+                    logger.info(
+                        "Pre-window daily schedule refresh triggered for %s...",
+                        today_date,
+                    )
+                    reconcile_and_refresh_daily_schedule(
+                        db=db, target_date=today_date, clock=self.clock
+                    )
             except Exception as e:
                 logger.warning("Auto-scheduling check failed in worker cycle: %s", e)
 
@@ -672,6 +684,14 @@ class Worker:
         # 1. Startup crash safety: recover stuck 'sending' messages (>10m)
         with self.session_factory() as db:
             recover_stuck_sending_messages(db, self.clock)
+            from app.services.planner import realign_scheduled_emails
+
+            realigned = realign_scheduled_emails(db, self.clock)
+            if realigned > 0:
+                logger.info(
+                    "Startup catch-up: realigned %d scheduled message(s) cleanly from now onwards",
+                    realigned,
+                )
 
         signal.signal(signal.SIGINT, self.stop)
         signal.signal(signal.SIGTERM, self.stop)

@@ -186,9 +186,7 @@ def run_doctor_checks(
         bounce_stop_float = float(bounce_stop_val)
 
         limits_ok = (
-            hard_max_int <= HARD_MAX_LIMIT
-            and min_gap_int >= 120
-            and bounce_stop_float <= 2.0
+            hard_max_int <= HARD_MAX_LIMIT and min_gap_int >= 120 and bounce_stop_float <= 2.0
         )
         if limits_ok:
             items.append(
@@ -372,14 +370,17 @@ def run_doctor_checks(
         )
 
     # 10. Unapproved leads count
-    unapproved_count = db.scalar(
-        select(func.count(Lead.id)).where(
-            Lead.status.in_([LeadStatus.NEW.value, LeadStatus.VALID.value])
+    unapproved_count = (
+        db.scalar(
+            select(func.count(Lead.id)).where(
+                Lead.status.in_([LeadStatus.NEW.value, LeadStatus.VALID.value])
+            )
         )
-    ) or 0
-    approved_count = db.scalar(
-        select(func.count(Lead.id)).where(Lead.status == LeadStatus.APPROVED.value)
-    ) or 0
+        or 0
+    )
+    approved_count = (
+        db.scalar(select(func.count(Lead.id)).where(Lead.status == LeadStatus.APPROVED.value)) or 0
+    )
     items.append(
         CheckItem(
             name="Approval Queue Status",
@@ -463,6 +464,7 @@ def create_sqlite_backup(
     """Create a hot online SQLite backup and prune backups older than max_keep."""
     backup_dir.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
+
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f"backup_{now_str}.db"
     dest_path = backup_dir / backup_filename

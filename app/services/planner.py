@@ -311,9 +311,7 @@ def get_effective_daily_cap(db: Session, target_date: date) -> int:
     """
     from app.models.mailbox import Mailbox
 
-    active_mbs = db.scalars(
-        select(Mailbox).where(Mailbox.is_active)
-    ).all()
+    active_mbs = db.scalars(select(Mailbox).where(Mailbox.is_active)).all()
 
     if active_mbs:
         total_cap = sum(mb.daily_send_cap for mb in active_mbs if mb.daily_send_cap > 0)
@@ -646,8 +644,7 @@ def realign_scheduled_emails(
         jitter_fn = lambda: random.randint(0, max(0, max_jitter_sec))  # noqa: E731
 
     raw_msgs = db.scalars(
-        select(EmailMessage)
-        .where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
+        select(EmailMessage).where(EmailMessage.status == EmailMessageStatus.SCHEDULED.value)
     ).all()
 
     if not raw_msgs:
@@ -755,4 +752,3 @@ def realign_scheduled_emails(
         )
 
     return realigned_count
-

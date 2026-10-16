@@ -69,6 +69,9 @@ class Lead(Base):
     timezone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     personal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pitch_angle: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    offered_service: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    example_result: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(
         String(50),
         default=LeadStatus.NEW.value,

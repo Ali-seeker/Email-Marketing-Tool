@@ -173,4 +173,3 @@ def execute_plan(
         remaining_capacity=rem_cap,
         planned_emails=planned_items,
     )
-

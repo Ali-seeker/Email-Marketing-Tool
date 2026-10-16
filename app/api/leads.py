@@ -1,6 +1,6 @@
 """Leads management API endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, or_, select
@@ -523,3 +523,38 @@ def bulk_personalize_leads(
         ),
     )
 
+
+@router.get("/jit-status")
+def get_jit_lead_status(
+    target_date: Annotated[str | None, Query()] = None,
+    db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
+) -> dict[str, Any]:
+    """Retrieve current Just-In-Time (JIT) lead pool metrics and daily capacity status."""
+    from datetime import date
+
+    from app.services.jit_planner import get_jit_status
+
+    parsed_date = date.fromisoformat(target_date.strip()) if target_date else None
+    status = get_jit_status(db=db, target_date=parsed_date, clock=clock)
+    return status.to_dict()
+
+
+@router.post("/jit-process")
+def trigger_jit_batch_process(
+    target_date: Annotated[str | None, Query()] = None,
+    db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
+) -> dict[str, Any]:
+    """Manually trigger a JIT batch personalization and scheduling cycle for today."""
+    from datetime import date
+
+    from app.services.jit_planner import reconcile_and_refresh_daily_schedule
+
+    parsed_date = date.fromisoformat(target_date.strip()) if target_date else None
+    result = reconcile_and_refresh_daily_schedule(
+        db=db,
+        target_date=parsed_date,
+        clock=clock,
+    )
+    return result.to_dict()

@@ -332,4 +332,3 @@ def delete_campaign(
     db.delete(campaign)
     db.commit()
     return {"status": "deleted", "id": campaign_id, "name": name}
-

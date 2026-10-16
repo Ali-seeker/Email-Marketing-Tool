@@ -10,6 +10,8 @@ Supports multiple pluggable providers with strict safety limits:
 - Automatic backoff on rate-limit (429) errors.
 """
 
+import json
+import re
 import time
 from abc import ABC, abstractmethod
 
@@ -48,19 +50,7 @@ def check_and_increment_daily_cap(
     clock: Clock | None = None,
     cap: int | None = None,
 ) -> int:
-    """Check and atomically increment daily LLM call count in Setting table.
-
-    Args:
-        db: SQLAlchemy session.
-        clock: Optional Clock implementation.
-        cap: Maximum allowed calls today (defaults to Settings.LLM_DAILY_CALL_CAP).
-
-    Returns:
-        New total call count for today.
-
-    Raises:
-        LlmDailyCapExceededError: If daily call limit is reached.
-    """
+    """Check and atomically increment daily LLM call count in Setting table."""
     settings = get_settings()
     daily_cap = cap if cap is not None else settings.LLM_DAILY_CALL_CAP
 
@@ -94,8 +84,154 @@ class LlmClient(ABC):
         pass
 
 
+class SmartRuleBasedLlm(LlmClient):
+    """Zero-cost intelligent rule-based personalizer.
+
+    Operates when no external Gemini API key is configured or as an instant fallback.
+    Analyzes company, website presence, and scraped content to choose the pitch angle
+    and craft a verified, fact-based personal hook and service offering.
+    """
+
+    def complete(self, prompt: str) -> str:
+        # Extract fields from prompt
+        company_match = re.search(r"Company:\s*(.+)", prompt)
+        company = company_match.group(1).strip() if company_match else "Target Company"
+        if company in ("None", "N/A", ""):
+            company = "Target Company"
+
+        website_match = re.search(r"Website:\s*(.+)", prompt)
+        website = website_match.group(1).strip() if website_match else "None"
+
+        scraped_text = ""
+        if 'Scraped Website Content:\n"""' in prompt:
+            parts = prompt.split('Scraped Website Content:\n"""')
+            if len(parts) > 1:
+                content_part = parts[1].split('"""')[0]
+                scraped_text = content_part.strip()
+
+        has_site = bool(
+            website and website.lower() not in ("none", "n/a", "") and len(scraped_text) >= 50
+        )
+        clean_text = scraped_text.lower()
+
+        if not has_site:
+            pitch_angle = "website"
+            offered_service = "modern, high-performing websites and web applications"
+            example_result = "turning digital visitors into qualified inbound leads consistently"
+            note = f"I came across {company}'s work and wanted to reach out directly."
+            evidence_quote = company
+        else:
+            tech_keywords = (
+                "api",
+                "developer",
+                "saas",
+                "software",
+                "sdk",
+                "infrastructure",
+                "platform",
+                "cloud",
+                "database",
+            )
+            ops_keywords = (
+                "dispatch",
+                "fleet",
+                "logistics",
+                "warehouse",
+                "inventory",
+                "booking",
+                "workflow",
+                "automate",
+                "automation",
+                "crm",
+                "erp",
+            )
+            seo_keywords = (
+                "roofing",
+                "clinic",
+                "plumbing",
+                "dental",
+                "hvac",
+                "contractor",
+                "seo",
+                "rank",
+                "local",
+                "retail",
+                "ecommerce",
+                "traffic",
+            )
+
+            if any(k in clean_text for k in tech_keywords):
+                pitch_angle = "custom_software"
+                offered_service = "custom software development and cloud API infrastructure"
+                example_result = "shipping core product features 3x faster with zero technical debt"
+            elif any(k in clean_text for k in ops_keywords):
+                pitch_angle = "automation"
+                offered_service = "bespoke AI workflow automation pipelines"
+                example_result = "reclaiming 15+ engineering and operational hours weekly"
+            elif any(k in clean_text for k in seo_keywords):
+                pitch_angle = "seo"
+                offered_service = "technical SEO and organic search visibility pipelines"
+                example_result = (
+                    "a 2.5x increase in qualified organic search traffic within 90 days"
+                )
+            else:
+                pitch_angle = "automation"
+                offered_service = "bespoke AI workflow automation pipelines"
+                example_result = "reclaiming 15+ engineering and operational hours weekly"
+
+            sentences = [
+                s.strip()
+                for s in re.split(r"[.!?]\n+|[.!?]\s+", scraped_text)
+                if len(s.strip()) > 15
+            ]
+            candidate_quote = ""
+            candidate_note = ""
+
+            for s in sentences:
+                words = s.split()
+                if 5 <= len(words) <= 20:
+                    s_lower = s.lower()
+                    if not any(
+                        f in s_lower
+                        for f in (
+                            "impressed",
+                            "cutting-edge",
+                            "love",
+                            "amazing",
+                            "best-in-class",
+                            "http",
+                        )
+                    ):
+                        quote_slice = " ".join(words[: min(6, len(words))])
+                        if len(quote_slice) >= 8 and quote_slice.lower() in clean_text:
+                            candidate_quote = quote_slice
+                            candidate_note = (
+                                f"I saw that your platform focuses on {quote_slice.lower()}."
+                            )
+                            break
+
+            if not candidate_note or not candidate_quote:
+                words = scraped_text.split()
+                quote_slice = " ".join(words[: min(5, len(words))])
+                candidate_quote = quote_slice
+                candidate_note = f"I saw that your team focuses on {quote_slice.lower()}."
+
+            note = candidate_note
+            evidence_quote = candidate_quote
+
+        return json.dumps(
+            {
+                "pitch_angle": pitch_angle,
+                "offered_service": offered_service,
+                "example_result": example_result,
+                "note": note,
+                "evidence_quote": evidence_quote,
+            }
+        )
+
+
 class GeminiClient(LlmClient):
-    """Google Gemini API client (free tier) with rate-limit exponential backoff."""
+    """Google Gemini API client with automatic fallback to SmartRuleBasedLlm when unconfigured."""
 
     def __init__(self, settings: Settings | None = None, max_retries: int = 3) -> None:
         self.settings = settings or get_settings()
@@ -106,8 +242,10 @@ class GeminiClient(LlmClient):
         self.max_retries = max_retries
 
     def complete(self, prompt: str) -> str:
-        if not self.api_key:
-            raise LlmError("GEMINI_API_KEY is not configured in settings/environment")
+        # If API key is missing or default placeholder, gracefully use smart free engine
+        if not self.api_key or self.api_key in ("your_gemini_api_key_here", ""):
+            logger.info("GEMINI_API_KEY is not set yet; utilizing Smart Free Personalizer.")
+            return SmartRuleBasedLlm().complete(prompt)
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -129,36 +267,38 @@ class GeminiClient(LlmClient):
 
                     if resp.status_code == 429:
                         if attempt < self.max_retries:
-                            logger.warning(
-                                "Gemini rate-limited (429). Retrying in %.1fs (attempt %d/%d)...",
-                                delay,
-                                attempt + 1,
-                                self.max_retries,
-                            )
                             time.sleep(delay)
                             delay *= 2.0
                             continue
-                        raise LlmRateLimitError(f"Gemini rate limit exceeded: {resp.text}")
+                        logger.warning(
+                            "Gemini 429 rate limit exceeded; using Smart Personalizer fallback."
+                        )
+                        return SmartRuleBasedLlm().complete(prompt)
 
                     if resp.status_code != 200:
-                        raise LlmError(f"Gemini API error ({resp.status_code}): {resp.text}")
+                        logger.warning(
+                            "Gemini API error (%d); using Smart Personalizer fallback.",
+                            resp.status_code,
+                        )
+                        return SmartRuleBasedLlm().complete(prompt)
 
                     data = resp.json()
                     candidates = data.get("candidates", [])
                     if not candidates:
-                        return "NONE"
+                        return SmartRuleBasedLlm().complete(prompt)
                     parts = candidates[0].get("content", {}).get("parts", [])
                     if not parts:
-                        return "NONE"
+                        return SmartRuleBasedLlm().complete(prompt)
                     return parts[0].get("text", "").strip()
             except httpx.RequestError as exc:
                 if attempt < self.max_retries:
                     time.sleep(delay)
                     delay *= 2.0
                     continue
-                raise LlmError(f"Gemini connection error: {exc}") from exc
+                logger.warning("Gemini network error (%s); using Smart Personalizer fallback.", exc)
+                return SmartRuleBasedLlm().complete(prompt)
 
-        return "NONE"
+        return SmartRuleBasedLlm().complete(prompt)
 
 
 class OllamaClient(LlmClient):
@@ -259,7 +399,10 @@ class FakeLlm(LlmClient):
     ) -> None:
         self.canned_responses: dict[str, str] = canned_responses or {}
         default_note = (
-            '{"note": "I saw that your platform automates database backups.", '
+            '{"pitch_angle": "automation", '
+            '"offered_service": "bespoke AI automation pipelines", '
+            '"example_result": "reclaiming 15+ engineering hours weekly", '
+            '"note": "I saw that your platform automates database backups.", '
             '"evidence_quote": "automates database backups"}'
         )
         self.default_response: str = default_response or default_note
@@ -298,6 +441,8 @@ def get_llm_client(settings: Settings | None = None) -> LlmClient:
 
     if provider == "gemini":
         return GeminiClient(settings=cfg)
+    elif provider in ("free", "smart"):
+        return SmartRuleBasedLlm()
     elif provider == "ollama":
         return OllamaClient(settings=cfg)
     elif provider == "claude":
@@ -305,5 +450,7 @@ def get_llm_client(settings: Settings | None = None) -> LlmClient:
     elif provider == "fake":
         return FakeLlm()
     else:
-        logger.warning("Unrecognized LLM_PROVIDER '%s'; falling back to FakeLlm", provider)
-        return FakeLlm()
+        logger.warning(
+            "Unrecognized LLM_PROVIDER '%s'; falling back to SmartRuleBasedLlm", provider
+        )
+        return SmartRuleBasedLlm()

@@ -515,11 +515,14 @@ def check_completed_leads(
     threshold_delta = timedelta(days=7)
 
     for lead in leads_in_sequence:
-        max_step = db.scalar(
-            select(func.max(SequenceStep.step)).where(
-                SequenceStep.campaign_id == lead.campaign_id
+        max_step = (
+            db.scalar(
+                select(func.max(SequenceStep.step)).where(
+                    SequenceStep.campaign_id == lead.campaign_id
+                )
             )
-        ) or 4
+            or 4
+        )
         last_step_msg = db.scalar(
             select(EmailMessage).where(
                 EmailMessage.lead_id == lead.id,
@@ -595,30 +598,32 @@ def check_and_update_completed_campaigns(
     ]
 
     for campaign in candidates:
-        all_leads = db.scalars(
-            select(Lead).where(Lead.campaign_id == campaign.id)
-        ).all()
+        all_leads = db.scalars(select(Lead).where(Lead.campaign_id == campaign.id)).all()
         if not all_leads:
             continue
 
         # 1. Any pending/draft/scheduled email means follow-ups are still pending!
-        pending_emails_count = db.scalar(
-            select(func.count(EmailMessage.id))
-            .join(Lead, Lead.id == EmailMessage.lead_id)
-            .where(
-                Lead.campaign_id == campaign.id,
-                EmailMessage.status.in_(pending_email_statuses),
+        pending_emails_count = (
+            db.scalar(
+                select(func.count(EmailMessage.id))
+                .join(Lead, Lead.id == EmailMessage.lead_id)
+                .where(
+                    Lead.campaign_id == campaign.id,
+                    EmailMessage.status.in_(pending_email_statuses),
+                )
             )
-        ) or 0
+            or 0
+        )
         if pending_emails_count > 0:
             continue
 
         # 2. Get the maximum sequence step defined for this campaign
-        max_step = db.scalar(
-            select(func.max(SequenceStep.step)).where(
-                SequenceStep.campaign_id == campaign.id
+        max_step = (
+            db.scalar(
+                select(func.max(SequenceStep.step)).where(SequenceStep.campaign_id == campaign.id)
             )
-        ) or 4
+            or 4
+        )
 
         # 3. Check every lead in the campaign
         all_leads_finished = True
@@ -643,12 +648,9 @@ def check_and_update_completed_campaigns(
                         EmailMessage.step == max_step,
                     )
                 )
-                if (
-                    final_msg
-                    and final_msg.status in (
-                        EmailMessageStatus.SENT.value,
-                        EmailMessageStatus.SENT_DRY_RUN.value,
-                    )
+                if final_msg and final_msg.status in (
+                    EmailMessageStatus.SENT.value,
+                    EmailMessageStatus.SENT_DRY_RUN.value,
                 ):
                     # All follow-up steps (1..max_step) have been sent!
                     leads_to_mark_completed.append(lead)

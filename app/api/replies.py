@@ -186,4 +186,3 @@ def get_reply_inboxes(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             }
         )
     return results
-

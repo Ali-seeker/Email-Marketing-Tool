@@ -78,8 +78,7 @@ def get_safety_status(
         select(Setting.value).where(Setting.key == "HUNTER_QUOTA_EXCEEDED")
     )
     hunter_quota_exceeded = bool(
-        hunter_exceeded_setting
-        and hunter_exceeded_setting.strip().lower() in ("true", "1", "yes")
+        hunter_exceeded_setting and hunter_exceeded_setting.strip().lower() in ("true", "1", "yes")
     )
 
     hunter_dismissed_setting = db.scalar(
@@ -122,9 +121,7 @@ def dismiss_hunter_alert(
     from app.models.setting import Setting
 
     now_dt = clock.now()
-    dismissed = db.scalar(
-        select(Setting).where(Setting.key == "HUNTER_QUOTA_ALERT_DISMISSED")
-    )
+    dismissed = db.scalar(select(Setting).where(Setting.key == "HUNTER_QUOTA_ALERT_DISMISSED"))
     if not dismissed:
         db.add(Setting(key="HUNTER_QUOTA_ALERT_DISMISSED", value="true", updated_at=now_dt))
     else:

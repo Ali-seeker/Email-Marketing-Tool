@@ -504,11 +504,15 @@ def test_multi_mailbox_uid_checkpoints(inbox_db: tuple[Session, sessionmaker]) -
 
     # Mailbox 1 has 5 messages (UIDs 1 to 5)
     for i in range(1, 6):
-        reader1.add_message(f"From: user{i}@example.com\nTo: mb1@test.com\nSubject: Hi {i}\n\nBody".encode())
+        reader1.add_message(
+            f"From: user{i}@example.com\nTo: mb1@test.com\nSubject: Hi {i}\n\nBody".encode()
+        )
 
     # Mailbox 2 has 3 messages (UIDs 1 to 3)
     for i in range(1, 4):
-        reader2.add_message(f"From: user{i}@example.com\nTo: mb2@test.com\nSubject: Hi {i}\n\nBody".encode())
+        reader2.add_message(
+            f"From: user{i}@example.com\nTo: mb2@test.com\nSubject: Hi {i}\n\nBody".encode()
+        )
 
     # Poll Mailbox 1
     count1, _ = poll_inbox_and_process(reader1, db, clock=clock)
@@ -522,9 +526,10 @@ def test_multi_mailbox_uid_checkpoints(inbox_db: tuple[Session, sessionmaker]) -
 
     # Add 2 more messages to Mailbox 2 (UIDs 4 and 5)
     for i in range(4, 6):
-        reader2.add_message(f"From: user{i}@example.com\nTo: mb2@test.com\nSubject: Hi {i}\n\nBody".encode())
+        reader2.add_message(
+            f"From: user{i}@example.com\nTo: mb2@test.com\nSubject: Hi {i}\n\nBody".encode()
+        )
 
     count2_next, _ = poll_inbox_and_process(reader2, db, clock=clock)
     assert count2_next == 2
     assert db.scalar(select(Setting.value).where(Setting.key == "LAST_INBOX_UID_MB_2")) == "5"
-

@@ -501,6 +501,7 @@ def test_planner_config_helpers_edge_cases(plan_db: Session) -> None:
 
     # due_emails with killswitch active returns empty
     from app.services.safety import trigger_killswitch
+
     trigger_killswitch(plan_db, "testing killswitch", clock=FakeClock())
     assert due_emails(now_or_db=plan_db) == []
 
@@ -649,7 +650,3 @@ def test_realign_scheduled_emails_enforces_jitter(plan_db: Session) -> None:
 
     gap = (msgs[1].scheduled_at - msgs[0].scheduled_at).total_seconds()
     assert gap == 120 + 35  # Exactly 155s, not 120s!
-
-
-
-

@@ -26,6 +26,7 @@ from app.core.logging import get_logger
 from app.models.campaign import Campaign
 from app.models.event import Event, EventType
 from app.models.lead import Lead, LeadStatus
+from app.models.setting import Setting
 from app.services.fetcher import WebFetcher, fetch_website
 from app.services.llm import (
     LlmClient,
@@ -104,6 +105,8 @@ def verify_personal_note(
     note: str,
     evidence_quote: str,
     scraped_text: str,
+    pitch_angle: str | None = None,
+    company: str | None = None,
 ) -> tuple[bool, str | None]:
     """Verify that a proposed personal note strictly adheres to truth and tone rules.
 
@@ -111,6 +114,8 @@ def verify_personal_note(
         note: Generated single opening sentence.
         evidence_quote: Exact supporting quote.
         scraped_text: Full text scraped from lead website.
+        pitch_angle: Selected service offer category (website, seo, automation, custom_software).
+        company: Optional target company name for non-website validation.
 
     Returns:
         Tuple of (is_valid, rejection_reason).
@@ -124,8 +129,16 @@ def verify_personal_note(
     if not clean_quote:
         return False, "evidence quote is empty"
 
-    # 1. Evidence quote must literally appear in the scraped text
-    if len(clean_quote) < 5 or clean_quote.lower() not in clean_text:
+    # 1. Evidence quote verification
+    # When website text is available, quote must literally appear in scraped text.
+    # When pitch_angle is 'website' with no scraped text, quote should reference company or domain.
+    if clean_text:
+        if len(clean_quote) < 5 or clean_quote.lower() not in clean_text:
+            return False, f"evidence quote '{clean_quote}' not found in scraped text"
+    elif pitch_angle == "website":
+        if len(clean_quote) < 3:
+            return False, f"evidence reference '{clean_quote}' is too short"
+    else:
         return False, f"evidence quote '{clean_quote}' not found in scraped text"
 
     # 2. Maximum 25 words rule
@@ -137,10 +150,16 @@ def verify_personal_note(
 
     # 3. No hallucinated numbers
     numbers_in_note = NUMBER_PATTERN.findall(clean_note)
-    for num in numbers_in_note:
-        clean_num = num.strip().lower()
-        if clean_num not in clean_text:
-            return False, f"hallucinated number '{num}' not found in scraped text"
+    if clean_text:
+        for num in numbers_in_note:
+            clean_num = num.strip().lower()
+            if clean_num not in clean_text:
+                return False, f"hallucinated number '{num}' not found in scraped text"
+    elif numbers_in_note:
+        co_lower = (company or "").lower()
+        for num in numbers_in_note:
+            if num.strip().lower() not in co_lower:
+                return False, f"hallucinated number '{num}' in note without supporting text"
 
     # 4. Ban generic flattery and exaggeration
     lower_note = clean_note.lower()
@@ -155,7 +174,7 @@ def verify_personal_note(
 
     # 6. Unsubstantiated claims (awards, funding, capital)
     for claim in UNSUBSTANTIATED_CLAIMS:
-        if claim in lower_note and claim not in clean_text:
+        if claim in lower_note and (not clean_text or claim not in clean_text):
             return False, f"unsubstantiated claim '{claim}' not found in scraped text"
 
     return True, None
@@ -168,14 +187,25 @@ def build_personalization_prompt(
     meta_description: str | None,
     headings: list[str],
     scraped_text: str,
+    niche: str | None = None,
 ) -> str:
-    """Build grounded LLM prompt for single-sentence personal opening line."""
+    """Build grounded LLM prompt to select pitch angle, service, metric, and opening note."""
     headings_str = " | ".join(headings[:6]) if headings else "N/A"
-    return f"""You are an elite B2B research assistant preparing outreach.
-Your goal is to write ONE calm, human opening sentence (max 25 words) for a cold email.
+    return f"""You are an elite B2B research assistant preparing outreach for an engineering agency.
+Our agency provides software and digital solutions across 4 distinct service categories:
+1. 'website': Modern web applications and high-converting websites
+   (for leads with NO website, an unreachable site, or a very basic landing page).
+2. 'seo': Technical SEO and organic search visibility pipelines
+   (for leads with an active website with thin meta tags, low rankings, or needing organic growth).
+3. 'automation': Bespoke workflow & AI automation pipelines
+   (for businesses with repetitive manual operations, booking, scheduling, dispatch, or CRM sync).
+4. 'custom_software': Custom full-stack software development & API infrastructure
+   (for tech companies, SaaS products, dev tools, or teams with complex feature roadmaps).
 
+Target Lead:
 Company: {company or "Target Company"}
-Website: {website or "N/A"}
+Industry/Niche: {niche or "N/A"}
+Website: {website or "None"}
 Page Title: {title or "N/A"}
 Meta Description: {meta_description or "N/A"}
 Headings: {headings_str}
@@ -185,20 +215,31 @@ Scraped Website Content:
 {scraped_text}
 \"\"\"
 
+TASKS:
+1. Determine the best pitch_angle ('website', 'seo', 'automation', or 'custom_software').
+   - If no website is available or site is unreachable, select 'website'.
+   - If website has weak metadata/SEO or is a local business needing discovery, select 'seo'.
+   - If business has repetitive operations, logistics, dispatch, or syncing, select 'automation'.
+   - If business is a tech company, platform, or SaaS product, select 'custom_software'.
+2. Select offered_service: A concise noun phrase that fits the sequence sentence template:
+   "we build {{service}} for growing teams in the {{niche}} sector".
+3. Select example_result: A concrete outcome phrase that fits the sequence sentence template:
+   "helped a peer team achieve {{example_result}} without adding headcount".
+4. Write note: EXACTLY ONE calm, human opening observation sentence (MAXIMUM 25 WORDS).
+   Factual, grounded in their real business or services.
+5. Provide evidence_quote: Exact short quote from scraped text (or company name if no website).
+
 HARD RULES:
-1. Reference ONE specific, verifiable fact from the text (a product, service, recent post,
-   or customer segment they serve).
-2. Use ONLY facts present in the text above. Never invent numbers, statistics, clients, or awards.
-3. If there is not enough specific info to write an observation, output exactly: NONE
-4. Length: EXACTLY ONE SENTENCE, MAXIMUM 25 WORDS.
-5. Tone: Calm, natural human observation.
-6. FORBIDDEN:
-   - NO generic flattery ("I was impressed", "love what you do", "great company", "cutting-edge").
-   - NEVER mention scraping or monitoring ("I noticed on your homepage", "looked at your site").
-7. Output format: Return STRICTLY JSON with these two keys:
+- Never use generic flattery ("impressed", "cutting-edge", "amazing", "love what you do").
+- Never mention scraping or monitoring ("noticed on your homepage", "checked your website").
+- Length: EXACTLY ONE SENTENCE, MAXIMUM 25 WORDS.
+- Output MUST be valid JSON only:
 {{
-  "note": "<one sentence observation>",
-  "evidence_quote": "<short exact quote from the text supporting this note>"
+  "pitch_angle": "<website|seo|automation|custom_software>",
+  "offered_service": "<concise noun phrase for {{service}}>",
+  "example_result": "<concise outcome phrase for {{example_result}}>",
+  "note": "<one sentence opening observation>",
+  "evidence_quote": "<exact quote from text>"
 }}
 """
 
@@ -229,6 +270,14 @@ def _parse_llm_json(raw_text: str) -> dict[str, str] | None:
     return None
 
 
+def is_auto_approve_enabled(db: Session) -> bool:
+    """Check setting AUTO_APPROVE from DB override or config."""
+    db_setting = db.scalar(select(Setting).where(Setting.key == "AUTO_APPROVE"))
+    if db_setting and db_setting.value is not None:
+        return db_setting.value.strip().lower() in ("true", "1", "yes")
+    return get_settings().AUTO_APPROVE
+
+
 def personalize_lead(
     lead: Lead,
     db: Session,
@@ -249,6 +298,7 @@ def personalize_lead(
         Tuple of (success_bool, message_summary).
     """
     settings = get_settings()
+    auto_approve = is_auto_approve_enabled(db)
     clk = clock or system_clock
     now_dt = clk.now()
     if now_dt.tzinfo is None:
@@ -257,32 +307,40 @@ def personalize_lead(
     # 1. Existing personal_note check (CSV-provided or manually edited)
     if lead.personal_note and lead.personal_note.strip():
         logger.info("Preserving existing personal note for lead #%d (%s)", lead.id, lead.email)
+        if not getattr(lead, "pitch_angle", None):
+            lead.pitch_angle = "automation"
+        if not getattr(lead, "offered_service", None):
+            lead.offered_service = settings.DEFAULT_SERVICE
+        if not getattr(lead, "example_result", None):
+            lead.example_result = settings.DEFAULT_EXAMPLE_RESULT
         if lead.status in (LeadStatus.NEW.value, LeadStatus.VALID.value):
             lead.status = (
-                LeadStatus.APPROVED.value
-                if settings.AUTO_APPROVE
-                else LeadStatus.PERSONALIZED.value
+                LeadStatus.APPROVED.value if auto_approve else LeadStatus.PERSONALIZED.value
             )
             db.commit()
         return True, "Existing personal note preserved"
 
-    # 2. Website presence verification
-    if not lead.website or not lead.website.strip():
-        lead.status = LeadStatus.NEEDS_MANUAL_NOTE.value
-        lead.validation_reason = "No website provided"
-        db.commit()
-        return False, "No website provided"
+    # 2. Website presence verification & scraping
+    has_website = bool(lead.website and lead.website.strip())
+    scraped_text = ""
+    scraped_title = None
+    scraped_meta = None
+    scraped_headings: list[str] = []
 
-    # 3. Scrape website content
-    scraped = fetch_website(lead.website, fetcher=fetcher, db=db, clock=clk)
-    if not scraped.is_usable or len(scraped.visible_text) < 50:
-        lead.status = LeadStatus.NEEDS_MANUAL_NOTE.value
-        reason = scraped.error or "Website unreachable or thin content"
-        lead.validation_reason = f"Scraping failed: {reason}"
-        db.commit()
-        return False, f"Scraping failed: {reason}"
+    if has_website:
+        scraped = fetch_website(lead.website, fetcher=fetcher, db=db, clock=clk)
+        if not scraped.is_usable or len(scraped.visible_text) < 50:
+            lead.status = LeadStatus.NEEDS_MANUAL_NOTE.value
+            reason = scraped.error or "Website unreachable or thin content"
+            lead.validation_reason = f"Scraping failed: {reason}"
+            db.commit()
+            return False, f"Scraping failed: {reason}"
+        scraped_text = scraped.visible_text
+        scraped_title = scraped.title
+        scraped_meta = scraped.meta_description
+        scraped_headings = scraped.headings
 
-    # 4. LLM daily call cap check
+    # 3. LLM daily call cap check
     try:
         check_and_increment_daily_cap(db, clock=clk)
     except LlmDailyCapExceededError as exc:
@@ -291,14 +349,16 @@ def personalize_lead(
         db.commit()
         return False, str(exc)
 
-    # 5. Generate completion from LLM
+    # 4. Generate completion from LLM
+    niche_val = lead.campaign.niche if lead.campaign else None
     prompt = build_personalization_prompt(
         company=lead.company,
-        website=lead.website,
-        title=scraped.title,
-        meta_description=scraped.meta_description,
-        headings=scraped.headings,
-        scraped_text=scraped.visible_text,
+        website=lead.website if has_website else None,
+        title=scraped_title,
+        meta_description=scraped_meta,
+        headings=scraped_headings,
+        scraped_text=scraped_text,
+        niche=niche_val,
     )
 
     try:
@@ -309,7 +369,7 @@ def personalize_lead(
         db.commit()
         return False, f"LLM error: {exc}"
 
-    # 6. Parse and verify output
+    # 5. Parse and verify output
     parsed_json = _parse_llm_json(raw_output)
     if not parsed_json:
         lead.status = LeadStatus.NEEDS_MANUAL_NOTE.value
@@ -320,10 +380,47 @@ def personalize_lead(
     note = str(parsed_json.get("note") or "").strip()
     evidence = str(parsed_json.get("evidence_quote") or "").strip()
 
+    # Determine pitch angle and fallbacks
+    if not has_website:
+        pitch_angle = "website"
+    else:
+        pitch_angle = str(parsed_json.get("pitch_angle") or "automation").strip().lower()
+        if pitch_angle not in ("website", "seo", "automation", "custom_software"):
+            pitch_angle = "automation"
+
+    offered_service = str(parsed_json.get("offered_service") or "").strip()
+    if not offered_service:
+        if pitch_angle == "website":
+            offered_service = "modern, high-performing websites and web applications"
+        elif pitch_angle == "seo":
+            offered_service = "technical SEO and organic search visibility pipelines"
+        elif pitch_angle == "custom_software":
+            offered_service = "custom software development and cloud API infrastructure"
+        else:
+            offered_service = settings.DEFAULT_SERVICE
+
+    example_result = str(parsed_json.get("example_result") or "").strip()
+    if not example_result:
+        if pitch_angle == "website":
+            example_result = "turning digital visitors into qualified inbound leads consistently"
+        elif pitch_angle == "seo":
+            example_result = "a 2.5x increase in qualified organic search traffic within 90 days"
+        elif pitch_angle == "custom_software":
+            example_result = "shipping core product features 3x faster with zero technical debt"
+        else:
+            example_result = settings.DEFAULT_EXAMPLE_RESULT
+
+    # If lead had no website, ensure evidence reference matches company or default
+    if not has_website:
+        if not evidence or (lead.company and evidence.lower() not in lead.company.lower()):
+            evidence = lead.company or "No website provided"
+
     is_valid, rejection_reason = verify_personal_note(
         note=note,
         evidence_quote=evidence,
-        scraped_text=scraped.visible_text,
+        scraped_text=scraped_text,
+        pitch_angle=pitch_angle,
+        company=lead.company,
     )
 
     if not is_valid:
@@ -345,12 +442,13 @@ def personalize_lead(
         db.commit()
         return False, f"Verification failed: {rejection_reason}"
 
-    # 7. Success: update lead record
+    # 6. Success: update lead record
     lead.personal_note = note
     lead.evidence_quote = evidence
-    lead.status = (
-        LeadStatus.APPROVED.value if settings.AUTO_APPROVE else LeadStatus.PERSONALIZED.value
-    )
+    lead.pitch_angle = pitch_angle
+    lead.offered_service = offered_service
+    lead.example_result = example_result
+    lead.status = LeadStatus.APPROVED.value if auto_approve else LeadStatus.PERSONALIZED.value
     lead.validation_reason = None
 
     db.add(
@@ -359,15 +457,20 @@ def personalize_lead(
             type=EventType.VALIDATED.value,
             payload={
                 "stage": "personalization",
+                "pitch_angle": pitch_angle,
+                "offered_service": offered_service,
+                "example_result": example_result,
                 "note": note,
                 "evidence_quote": evidence,
-                "auto_approved": settings.AUTO_APPROVE,
+                "auto_approved": auto_approve,
             },
             created_at=now_dt,
         )
     )
     db.commit()
-    logger.info("Lead #%d (%s) personalized: %s", lead.id, lead.email, note)
+    logger.info(
+        "Lead #%d (%s) personalized with angle '%s': %s", lead.id, lead.email, pitch_angle, note
+    )
     return True, "Personalization generated successfully"
 
 
@@ -426,6 +529,7 @@ def personalize_campaign(
 
     return stats
 
+
 @dataclass
 class PersonalizeReport:
     """Report summarizing bulk personalization outcome."""
@@ -457,4 +561,3 @@ def personalize_leads(
         preserved_count=stats["preserved"],
         needs_manual_count=stats["needs_manual_note"],
     )
-

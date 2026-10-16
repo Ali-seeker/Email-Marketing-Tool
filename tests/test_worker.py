@@ -132,6 +132,7 @@ def test_no_socket_opened_in_dry_run_across_30_emails(
     # Patch socket.socket
     monkeypatch.setenv("LIVE_MODE", "false")
     from app.core.config import get_settings
+
     get_settings.cache_clear()
     socket_mock = MagicMock()
     monkeypatch.setattr(socket, "socket", socket_mock)

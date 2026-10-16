@@ -179,9 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # Subcommand: backup
-    subparsers.add_parser(
-        "backup", help="Create online SQLite hot backup into data/backups"
-    )
+    subparsers.add_parser("backup", help="Create online SQLite hot backup into data/backups")
 
     # Subcommand: send-test
     send_test_parser = subparsers.add_parser(

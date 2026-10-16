@@ -231,12 +231,7 @@ def send_test_email(
     pwd = payload.smtp_password or (
         cfg.SMTP_PASSWORD.get_secret_value() if cfg.SMTP_PASSWORD else None
     )
-    from_email = (
-        payload.from_email
-        or cfg.SMTP_FROM_EMAIL
-        or username
-        or "coldreach@localhost"
-    )
+    from_email = payload.from_email or cfg.SMTP_FROM_EMAIL or username or "coldreach@localhost"
     from_name = cfg.SMTP_FROM_NAME or "ColdReach Tester"
 
     if not host or host == "smtp.example.com":

@@ -32,26 +32,44 @@ def test_credit_saver_policy_skips_external_verifier_on_local_bad(db_session):
     mock_verifier = MagicMock()
 
     # 1. Syntax bad
-    risk, _ = evaluate_email("bad-email", None, db_session, dns_resolver=dns, verifier=mock_verifier, clock=clock)
+    risk, _ = evaluate_email(
+        "bad-email", None, db_session, dns_resolver=dns, verifier=mock_verifier, clock=clock
+    )
     assert risk == RiskLevel.BAD.value
     mock_verifier.verify.assert_not_called()
 
     # 2. Known typo domain (gail.com)
     mock_verifier.reset_mock()
-    risk, _ = evaluate_email("user@gail.com", None, db_session, dns_resolver=dns, verifier=mock_verifier, clock=clock)
+    risk, _ = evaluate_email(
+        "user@gail.com", None, db_session, dns_resolver=dns, verifier=mock_verifier, clock=clock
+    )
     assert risk == RiskLevel.BAD.value
     mock_verifier.verify.assert_not_called()
 
     # 3. Disposable domain
     mock_verifier.reset_mock()
-    risk, _ = evaluate_email("temp@mailinator.com", None, db_session, dns_resolver=dns, verifier=mock_verifier, clock=clock)
+    risk, _ = evaluate_email(
+        "temp@mailinator.com",
+        None,
+        db_session,
+        dns_resolver=dns,
+        verifier=mock_verifier,
+        clock=clock,
+    )
     assert risk == RiskLevel.BAD.value
     mock_verifier.verify.assert_not_called()
 
     # 4. Dead DNS domain
     mock_verifier.reset_mock()
     dead_dns = FakeDnsResolver(default_valid=False)
-    risk, _ = evaluate_email("john@deadcompany.com", None, db_session, dns_resolver=dead_dns, verifier=mock_verifier, clock=clock)
+    risk, _ = evaluate_email(
+        "john@deadcompany.com",
+        None,
+        db_session,
+        dns_resolver=dead_dns,
+        verifier=mock_verifier,
+        clock=clock,
+    )
     assert risk == RiskLevel.BAD.value
     mock_verifier.verify.assert_not_called()
 
@@ -65,7 +83,14 @@ def test_credit_saver_calls_verifier_only_for_locally_valid(db_session):
         status="valid", risk_level=RiskLevel.OK.value, raw={}
     )
 
-    risk, _ = evaluate_email("clean@validcompany.com", None, db_session, dns_resolver=dns, verifier=mock_verifier, clock=clock)
+    risk, _ = evaluate_email(
+        "clean@validcompany.com",
+        None,
+        db_session,
+        dns_resolver=dns,
+        verifier=mock_verifier,
+        clock=clock,
+    )
     assert risk == RiskLevel.OK.value
     mock_verifier.verify.assert_called_once_with("clean@validcompany.com", db_session, clock)
 
@@ -87,12 +112,18 @@ def test_hunter_quota_exhausted_fallback_and_alert(db_session):
         assert res is None
 
         # Verify persistent alert flag is set in settings
-        flag = db_session.scalar(select(Setting.value).where(Setting.key == "HUNTER_QUOTA_EXCEEDED"))
+        flag = db_session.scalar(
+            select(Setting.value).where(Setting.key == "HUNTER_QUOTA_EXCEEDED")
+        )
         assert flag == "true"
-        dismissed = db_session.scalar(select(Setting.value).where(Setting.key == "HUNTER_QUOTA_ALERT_DISMISSED"))
+        dismissed = db_session.scalar(
+            select(Setting.value).where(Setting.key == "HUNTER_QUOTA_ALERT_DISMISSED")
+        )
         assert dismissed == "false"
 
     # evaluate_email continues seamlessly with local fallback
-    risk, reason = evaluate_email("lead2@domain.com", None, db_session, dns_resolver=dns, verifier=verifier, clock=clock)
+    risk, reason = evaluate_email(
+        "lead2@domain.com", None, db_session, dns_resolver=dns, verifier=verifier, clock=clock
+    )
     assert risk == RiskLevel.OK.value
     assert "Passed all validation checks" in reason

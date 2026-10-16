@@ -170,6 +170,24 @@ def init_db(target_engine: Engine | None = None) -> None:
             pass
 
         try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN pitch_angle VARCHAR(100)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN offered_service VARCHAR(255)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN example_result VARCHAR(255)"))
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
             conn.execute(
                 text(
                     "ALTER TABLE email_messages ADD COLUMN mailbox_id "
@@ -206,9 +224,7 @@ def init_db(target_engine: Engine | None = None) -> None:
             if cfg.SMTP_USERNAME and cfg.SMTP_USERNAME != "user@example.com":
                 pwd = cfg.SMTP_PASSWORD.get_secret_value() if cfg.SMTP_PASSWORD else ""
                 imap_pwd = (
-                    cfg.IMAP_APP_PASSWORD.get_secret_value()
-                    if cfg.IMAP_APP_PASSWORD
-                    else pwd
+                    cfg.IMAP_APP_PASSWORD.get_secret_value() if cfg.IMAP_APP_PASSWORD else pwd
                 )
                 default_box = Mailbox(
                     email=cfg.SMTP_FROM_EMAIL or cfg.SMTP_USERNAME,

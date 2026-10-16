@@ -89,7 +89,9 @@ def test_delete_campaign_cascades(test_env):
     # Verify campaign, step, and lead are removed
     with sm() as db:
         assert db.get(Campaign, cid) is None
-        steps = db.execute(select(SequenceStep).where(SequenceStep.campaign_id == cid)).scalars().all()
+        steps = (
+            db.execute(select(SequenceStep).where(SequenceStep.campaign_id == cid)).scalars().all()
+        )
         assert len(steps) == 0
         leads = db.execute(select(Lead).where(Lead.campaign_id == cid)).scalars().all()
         assert len(leads) == 0
@@ -173,7 +175,9 @@ def test_campaign_waits_for_all_followups_before_completing(test_env):
     _, sm, clock = test_env
 
     with sm() as db:
-        camp = Campaign(name="Followup Check Camp", niche="Tech", status=CampaignStatus.ACTIVE.value)
+        camp = Campaign(
+            name="Followup Check Camp", niche="Tech", status=CampaignStatus.ACTIVE.value
+        )
         db.add(camp)
         db.commit()
         db.refresh(camp)

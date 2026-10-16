@@ -84,9 +84,7 @@ def build_email_message(mail: OutgoingMail) -> tuple[PyEmailMessage, str]:
     msg.set_content(mail.body, subtype="plain", charset="utf-8")
 
     # Addressing with CRLF sanitization to prevent email header injection
-    clean_from_name = (
-        re.sub(r"[\r\n]+", " ", mail.from_name).strip() if mail.from_name else None
-    )
+    clean_from_name = re.sub(r"[\r\n]+", " ", mail.from_name).strip() if mail.from_name else None
     clean_to_name = re.sub(r"[\r\n]+", " ", mail.to_name).strip() if mail.to_name else None
     clean_from_email = re.sub(r"[\r\n]+", "", mail.from_email).strip()
     clean_to_email = re.sub(r"[\r\n]+", "", mail.to_email).strip()
@@ -104,9 +102,7 @@ def build_email_message(mail: OutgoingMail) -> tuple[PyEmailMessage, str]:
 
     msg["Subject"] = clean_subject
     reply_to_addr = (
-        re.sub(r"[\r\n]+", "", mail.reply_to).strip()
-        if mail.reply_to
-        else clean_from_email
+        re.sub(r"[\r\n]+", "", mail.reply_to).strip() if mail.reply_to else clean_from_email
     )
     msg["Reply-To"] = reply_to_addr
     msg["Date"] = formatdate(localtime=False)
@@ -358,6 +354,7 @@ def is_live_mode_active(db: Session | None = None) -> bool:
         from sqlalchemy import select
 
         from app.models.setting import Setting
+
         val = db.scalar(select(Setting.value).where(Setting.key == "LIVE_MODE"))
         if val is not None:
             return val.strip().lower() in ("true", "1", "yes")
@@ -395,4 +392,3 @@ def get_sender(
         password=pwd,
         use_ssl=cfg.SMTP_PORT == 465,
     )
-

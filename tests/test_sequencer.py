@@ -744,7 +744,9 @@ def test_randomized_state_machine_guarantee(seq_db: tuple[Session, sessionmaker]
                         assert can_send(sample_lead, m, db, clock=clock) is False
 
 
-def test_mark_not_interested_and_check_completed_leads(seq_db: tuple[Session, sessionmaker]) -> None:
+def test_mark_not_interested_and_check_completed_leads(
+    seq_db: tuple[Session, sessionmaker],
+) -> None:
     """Verify mark_not_interested suppresses and check_completed_leads marks finished sequences."""
     db, _ = seq_db
     campaign = db.scalar(select(Campaign))
@@ -765,7 +767,9 @@ def test_mark_not_interested_and_check_completed_leads(seq_db: tuple[Session, se
     # Mark all 4 steps of lead2 as sent 8 days ago
     eight_days_ago = clock.now() - timedelta(days=8)
     for s in (1, 2, 3, 4):
-        msg = db.scalar(select(EmailMessage).where(EmailMessage.lead_id == lead2.id, EmailMessage.step == s))
+        msg = db.scalar(
+            select(EmailMessage).where(EmailMessage.lead_id == lead2.id, EmailMessage.step == s)
+        )
         msg.status = EmailMessageStatus.SENT.value
         msg.sent_at = eight_days_ago
     lead2.status = LeadStatus.IN_SEQUENCE.value
@@ -898,8 +902,10 @@ def test_can_send_comprehensive_safety_gates(seq_db: tuple[Session, sessionmaker
     camp2 = Campaign(name="Custom Delay Campaign")
     db.add(camp2)
     db.commit()
-    db.add(SequenceStep(campaign_id=camp2.id, step=2, delay_days=5, subjects=["Follow up"], bodies=["Body"]))
+    db.add(
+        SequenceStep(
+            campaign_id=camp2.id, step=2, delay_days=5, subjects=["Follow up"], bodies=["Body"]
+        )
+    )
     db.commit()
     assert get_step_offset_days(db, camp2.id, 2) == 5
-
-

@@ -174,6 +174,7 @@ def test_pre_commit_hook_detects_secrets():
 def test_repo_files_contain_no_hardcoded_live_secrets():
     """Scan tracked configuration and codebase to ensure no real email passwords or tokens are stored."""
     from app.core.config import Settings
+
     default_settings = Settings(_env_file=None)
     assert not default_settings.LIVE_MODE, "LIVE_MODE must default to False!"
     if default_settings.SMTP_PASSWORD:

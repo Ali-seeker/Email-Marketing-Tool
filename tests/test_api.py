@@ -728,4 +728,3 @@ def test_settings_test_email_endpoint(
     assert resp.json()["success"] is True
     assert resp.json()["recipient"] == "tester@example.com"
     assert mock_send.called
-

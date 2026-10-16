@@ -177,9 +177,16 @@ def build_template_context(
         "sender_name": settings.SENDER_NAME,
         "sender_company": settings.SENDER_COMPANY,
         "portfolio_url": settings.PORTFOLIO_URL,
-        "service": settings.DEFAULT_SERVICE,
+        "service": (
+            (lead.offered_service.strip() if getattr(lead, "offered_service", None) else None)
+            or settings.DEFAULT_SERVICE
+        ),
         "niche": campaign.niche or "software",
-        "example_result": settings.DEFAULT_EXAMPLE_RESULT,
+        "example_result": (
+            (lead.example_result.strip() if getattr(lead, "example_result", None) else None)
+            or settings.DEFAULT_EXAMPLE_RESULT
+        ),
+        "pitch_angle": getattr(lead, "pitch_angle", None) or "automation",
     }
     if extra_context:
         ctx.update(extra_context)

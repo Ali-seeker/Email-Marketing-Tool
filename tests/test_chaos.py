@@ -171,9 +171,7 @@ def test_worker_survives_operational_error(chaos_db):
 
     # Mock run_once to raise OperationalError once
     mock_session = MagicMock()
-    mock_session.__enter__.side_effect = OperationalError(
-        "database is locked", {}, None
-    )
+    mock_session.__enter__.side_effect = OperationalError("database is locked", {}, None)
 
     # Worker run_once or process handles it gracefully without unhandled crashes
     with patch.object(worker, "session_factory", return_value=mock_session):
@@ -238,7 +236,9 @@ def test_smtp_transient_error_backoff_and_permanent_failure(chaos_db):
     # Attempt 1 -> rescheduled in 10m
     worker.process_message(msg.id, db, failing_sender, now)
     db.refresh(msg)
-    assert len(failing_sender.sent_messages) == 1, f"sent_messages={failing_sender.sent_messages}, status={msg.status}, error={msg.error}"
+    assert len(failing_sender.sent_messages) == 1, (
+        f"sent_messages={failing_sender.sent_messages}, status={msg.status}, error={msg.error}"
+    )
     assert msg.retry_count == 1, f"status={msg.status}, error={msg.error}"
     assert msg.status == EmailMessageStatus.SCHEDULED.value
     assert msg.scheduled_at == now + timedelta(minutes=10)

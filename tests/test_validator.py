@@ -260,4 +260,3 @@ def test_effective_allow_risky_and_campaign_id_filter(val_db: Session) -> None:
     assert summary.total_checked == 2
     assert summary.valid_count == 1
     assert summary.invalid_count == 1
-
